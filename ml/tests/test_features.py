@@ -1,0 +1,135 @@
+import pandas as pd
+import pytest
+from oyarzabal.features import (
+    GLOBAL_CATEGORICAL_FEATURES,
+    chronological_split,
+    prepare_pitch_rows,
+)
+from oyarzabal.taxonomy import PITCH_GROUPS, UNSUPPORTED_CONTEXT, PitchGroup
+from pandas.testing import assert_frame_equal
+
+
+def _rows() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "game_date": ["2024-01-01", "2024-01-01", "2024-02-01"],
+            "game_pk": [1, 1, 2],
+            "at_bat_number": [1, 1, 1],
+            "pitch_number": [1, 2, 1],
+            "pitcher": [10, 10, 10],
+            "batter": [20, 20, 30],
+            "pitch_type": ["FF", "SL", "CH"],
+            "release_speed": [95.0, 85.0, 82.0],
+            "plate_x": [0.1, -0.2, 0.4],
+            "plate_z": [2.5, 1.8, 2.0],
+            "description": ["called_strike", "ball", "swinging_strike"],
+            "balls": [0, 0, 0],
+            "strikes": [0, 1, 0],
+            "outs_when_up": [0, 0, 0],
+            "inning": [1, 1, 1],
+            "inning_topbot": ["Top", "Top", "Top"],
+            "stand": ["R", "R", "L"],
+            "p_throws": ["R", "R", "R"],
+            "bat_score": [0, 0, 0],
+            "fld_score": [0, 0, 0],
+        }
+    )
+
+
+def test_lagged_features_never_use_current_pitch() -> None:
+    rows = prepare_pitch_rows([_rows()])
+    assert rows.loc[0, "prev_pitch_group"] == "UNKNOWN"
+    assert rows.loc[1, "prev_pitch_group"] == str(PitchGroup.FOUR_SEAM)
+    assert rows.loc[1, "prev_release_speed"] == 95.0
+    assert rows.loc[2, "prev_pitch_group"] == "UNKNOWN"
+
+
+def test_chronological_split_has_strict_boundary() -> None:
+    rows = prepare_pitch_rows([_rows()])
+    train, validation = chronological_split(rows, validation_fraction=0.5)
+    assert train["game_date"].max() < validation["game_date"].min()
+    assert set(train["game_pk"]).isdisjoint(validation["game_pk"])
+
+
+def test_point_in_time_rates_do_not_use_current_or_future_targets() -> None:
+    original = _rows()
+    changed = original.copy()
+    changed.loc[1:, "pitch_type"] = ["CU", "FC"]
+
+    before = prepare_pitch_rows([original]).iloc[:2]
+    after = prepare_pitch_rows([changed]).iloc[:2]
+    rate_columns = [
+        name
+        for name in before
+        if name.startswith(
+            (
+                "career_rate_",
+                "season_rate_",
+                "recent_100_rate_",
+                "count_rate_",
+                "stand_rate_",
+                "transition_rate_",
+            )
+        )
+    ]
+    assert_frame_equal(
+        before[rate_columns].reset_index(drop=True),
+        after[rate_columns].reset_index(drop=True),
+    )
+
+
+def test_repertoire_probability_families_are_normalized() -> None:
+    rows = prepare_pitch_rows([_rows()])
+    for prefix in (
+        "career_rate_",
+        "season_rate_",
+        "recent_100_rate_",
+        "count_rate_",
+        "stand_rate_",
+        "transition_rate_",
+    ):
+        columns = [f"{prefix}{group}" for group in PITCH_GROUPS]
+        assert rows[columns].sum(axis=1).tolist() == pytest.approx([1.0, 1.0, 1.0])
+
+
+def test_unsupported_pitch_is_context_but_not_a_target() -> None:
+    rows = _rows()
+    unsupported = rows.iloc[[1]].copy()
+    unsupported["pitch_number"] = 3
+    unsupported["pitch_type"] = "FS"
+    final = rows.iloc[[1]].copy()
+    final["pitch_number"] = 4
+    final["pitch_type"] = "CH"
+    source = pd.concat([rows.iloc[:2], unsupported, final], ignore_index=True)
+
+    prepared = prepare_pitch_rows([source])
+
+    assert len(prepared) == 3
+    last = prepared.iloc[-1]
+    assert last["pa_prev_pitch_1"] == UNSUPPORTED_CONTEXT
+    assert last["pa_prev_pitch_2"] == str(PitchGroup.SLIDER)
+    assert last["pa_prev_pitch_3"] == str(PitchGroup.FOUR_SEAM)
+    assert last["prev_pitch_streak"] == 1
+
+
+def test_global_model_features_do_not_expose_player_identity() -> None:
+    assert "pitcher" not in GLOBAL_CATEGORICAL_FEATURES
+    assert "batter" not in GLOBAL_CATEGORICAL_FEATURES
+    assert {"stand", "p_throws", "prev_pitch_group"} <= set(
+        GLOBAL_CATEGORICAL_FEATURES
+    )
+    prepared = prepare_pitch_rows([_rows()])
+    assert prepared["pitcher_id"].tolist() == [10, 10, 10]
+    assert prepared["batter_id"].tolist() == [20, 20, 30]
+
+
+def test_sparse_bat_score_diff_column_falls_back_row_by_row() -> None:
+    history = _rows().iloc[:2].copy()
+    history["bat_score"] = [3, 4]
+    history["fld_score"] = [1, 2]
+    game = _rows().iloc[[2]].copy()
+    game["bat_score_diff"] = 5
+
+    prepared = prepare_pitch_rows([history, game])
+
+    assert prepared["score_diff"].tolist() == [2, 2, 5]
