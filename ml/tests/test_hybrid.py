@@ -4,6 +4,7 @@ import pytest
 from oyarzabal.hybrid import (
     RegistryEntry,
     apply_logit_bias,
+    apply_pooled_residual_by_pitcher,
     blend_by_pitcher,
     blend_probabilities,
     fit_logit_bias,
@@ -196,3 +197,29 @@ def test_personalizer_final_gate_rejects_accuracy_and_f1_regression() -> None:
     }
 
     assert personalizer_passes(global_metrics, candidate_metrics) is False
+
+
+def test_pooled_residual_routes_only_enabled_pitchers() -> None:
+    global_probabilities = np.full((2, 6), 1 / 6)
+    correction = np.array([[2, -2, 0, 0, 0, 0], [2, -2, 0, 0, 0, 0]])
+    registry = {
+        10: RegistryEntry(
+            pitcher_id=10,
+            enabled=True,
+            specialist_weight=0.5,
+            model="pooled-residual.pkl",
+            status="active",
+            residual_scale=0.5,
+        )
+    }
+
+    adjusted, sources = apply_pooled_residual_by_pitcher(
+        np.array([10, 20]),
+        global_probabilities,
+        correction,
+        registry,
+    )
+
+    assert adjusted[0, 0] > global_probabilities[0, 0]
+    assert adjusted[1] == pytest.approx(global_probabilities[1])
+    assert sources == ["pooled-residual", "global"]

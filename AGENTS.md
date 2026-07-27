@@ -32,7 +32,11 @@ Run from the repository root unless noted:
 - Do not select showcase games based on model performance.
 - Keep raw Statcast, model checkpoints, caches, and raw logs out of Git.
 - Do not label a historical showcase as a frozen 2026 holdout result.
-- Do not commit or push without explicit user authorization.
+- The user has given standing authorization to publish completed changes:
+  after all required checks pass, commit only the task's files on a feature
+  branch, push it, open or update a PR to `main`, and merge the PR.
+- Do not merge when checks fail, the PR is conflicted, or unrelated changes
+  would be included. Report the blocker instead.
 
 ## Done
 

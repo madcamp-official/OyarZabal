@@ -40,10 +40,15 @@ export interface Pitch {
   score: { away: number; home: number };
   recentPitches: string[];
   modelSource: {
-    type: "global" | "hybrid";
+    type:
+      | "global"
+      | "hybrid"
+      | "pooled-residual"
+      | "provisional-residual";
     label: string;
     globalWeight: number;
     specialistWeight: number;
+    residualScale?: number;
   };
   predictions: Record<ModelKey, Prediction>;
   explanations: string[];
@@ -71,7 +76,7 @@ export interface Game {
 }
 
 export interface Manifest {
-  schemaVersion: 4;
+  schemaVersion: 5;
   generatedAt: string;
   caveat: string;
   finalModel: string;

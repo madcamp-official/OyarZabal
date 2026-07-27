@@ -17,9 +17,7 @@ import pandas as pd
 from .features import chronological_split, group_names, prepare_pitch_rows
 from .hybrid import (
     RegistryEntry,
-    fit_logit_bias,
-    personalize_by_pitcher,
-    select_personalizer_strength,
+    apply_pooled_residual_by_pitcher,
     serialize_registry_entry,
     specialist_eligibility,
 )
@@ -31,6 +29,14 @@ from .modeling import (
     select_candidate,
     train_candidate_with_tuning,
     train_final_candidate,
+)
+from .residual import (
+    apply_correction,
+    pitcher_residual_passes,
+    predict_correction,
+    select_residual_scale,
+    train_final_residual,
+    train_residual_with_tuning,
 )
 from .resources import assert_safe, snapshot
 from .taxonomy import (
@@ -288,95 +294,148 @@ def _pregame_hybrid(
     global_temperature = float(selected["temperature"])
     global_validation_probabilities = selected["probabilities"]
 
-    registry: dict[int, RegistryEntry] = {}
+    pitcher_ids = [int(value) for value in sorted(history["pitcher_id"].unique())]
+    eligibility = {
+        pitcher_id: specialist_eligibility(
+            history[history["pitcher_id"] == pitcher_id]
+        )
+        for pitcher_id in pitcher_ids
+    }
+    pool = tuple(
+        pitcher_id
+        for pitcher_id, result in eligibility.items()
+        if result["eligible"]
+    )
+    pooled_mask = validation["pitcher_id"].isin(pool).to_numpy()
+    pooled_validation = validation[pooled_mask]
+    pooled_global = global_validation_probabilities[pooled_mask]
+    dates = np.array(
+        sorted(pooled_validation["game_date"].dt.normalize().unique())
+    )
+    cutoff = dates[max(1, min(len(dates) - 1, int(len(dates) * 0.6)))]
+    calibration_mask = (
+        pooled_validation["game_date"].dt.normalize().to_numpy() < cutoff
+    )
+    evaluation_mask = ~calibration_mask
+    residual = train_residual_with_tuning(
+        pooled_validation[calibration_mask],
+        pooled_global[calibration_mask],
+    )
+    evaluation_correction = predict_correction(
+        residual,
+        pooled_validation[evaluation_mask],
+    )
+    residual_selection = select_residual_scale(
+        pooled_validation.loc[evaluation_mask, "target"].to_numpy(),
+        pooled_global[evaluation_mask],
+        evaluation_correction,
+    )
+    residual_scale = float(residual_selection["scale"])
+    evaluation_candidate = apply_correction(
+        pooled_global[evaluation_mask],
+        evaluation_correction,
+        residual_scale,
+    )
+    evaluation_rows = pooled_validation[evaluation_mask]
     validation_results: dict[str, object] = {}
-
-    for pitcher_id, name in PILOT_PITCHERS.items():
-        pitcher_history = history[history["pitcher_id"] == pitcher_id]
-        eligibility = specialist_eligibility(pitcher_history)
-        pitcher_validation = validation[validation["pitcher_id"] == pitcher_id]
-        if (
-            not eligibility["eligible"]
-            or pitcher_validation.empty
-            or pitcher_validation["game_date"].dt.normalize().nunique() < 2
-        ):
-            registry[pitcher_id] = RegistryEntry(
-                pitcher_id, False, 0, "", reason="eligibility_or_validation"
-            )
+    accepted = []
+    for pitcher_id in pool:
+        positions = np.flatnonzero(
+            evaluation_rows["pitcher_id"].to_numpy() == pitcher_id
+        )
+        if not len(positions):
             validation_results[str(pitcher_id)] = {
-                "name": name,
-                "eligibility": eligibility,
+                "name": PILOT_PITCHERS.get(pitcher_id, f"선수 #{pitcher_id}"),
+                "eligibility": eligibility[pitcher_id],
+                "support": 0,
+                "accepted": False,
             }
             continue
-        positions = validation.index.get_indexer(pitcher_validation.index)
-        dates = np.array(
-            sorted(pitcher_validation["game_date"].dt.normalize().unique())
+        passed, global_metrics, candidate_metrics = pitcher_residual_passes(
+            evaluation_rows["target"].to_numpy()[positions],
+            pooled_global[evaluation_mask][positions],
+            evaluation_candidate[positions],
         )
-        cutoff = dates[max(1, min(len(dates) - 1, int(len(dates) * 0.6)))]
-        calibration_mask = (
-            pitcher_validation["game_date"].dt.normalize().to_numpy() < cutoff
-        )
-        evaluation_mask = ~calibration_mask
-        actual = pitcher_validation["target"].to_numpy()
-        probabilities = global_validation_probabilities[positions]
-        selection = select_personalizer_strength(
-            actual[calibration_mask],
-            probabilities[calibration_mask],
-            actual[evaluation_mask],
-            probabilities[evaluation_mask],
-        )
-        enabled = bool(selection["accepted"])
-        strength = (
-            float(selection["personalizerStrength"]) if enabled else None
-        )
-        bias = (
-            fit_logit_bias(actual, probabilities, prior_strength=strength)
-            if strength is not None
-            else None
-        )
-        effective_weight = (
-            len(actual) / (len(actual) + strength) if strength is not None else 0
-        )
-        registry[pitcher_id] = RegistryEntry(
-            pitcher_id,
-            enabled,
-            float(effective_weight),
-            "logit-bias" if enabled else "",
-            data_cutoff=history["game_date"].max().date().isoformat(),
-            reason=None if enabled else "validation_failed",
-            spec="pitcher-logit-bias" if enabled else None,
-            logit_bias=(
-                tuple(float(value) for value in bias) if bias is not None else None
-            ),
-            personalizer_strength=strength,
-        )
-        validation_results[str(pitcher_id)] = {
-            "name": name,
-            "eligibility": eligibility,
-            "selection": selection,
+        score = float(global_metrics["logLoss"] - candidate_metrics["logLoss"])
+        record = {
+            "name": PILOT_PITCHERS.get(pitcher_id, f"선수 #{pitcher_id}"),
+            "eligibility": eligibility[pitcher_id],
+            "support": int(len(positions)),
+            "accepted": bool(residual_selection["accepted"] and passed),
+            "globalMetrics": global_metrics,
+            "metrics": candidate_metrics,
+            "score": score,
         }
+        validation_results[str(pitcher_id)] = record
+        if record["accepted"]:
+            accepted.append((pitcher_id, score, len(positions)))
+    active_ids = {
+        pitcher_id
+        for pitcher_id, _, _ in sorted(
+            accepted,
+            key=lambda value: (-value[1], -value[2]),
+        )[:25]
+    }
+    registry = {}
+    for pitcher_id in pool:
+        enabled = pitcher_id in active_ids
+        pitcher_rows = history[history["pitcher_id"] == pitcher_id]
+        registry[pitcher_id] = RegistryEntry(
+            pitcher_id=pitcher_id,
+            enabled=enabled,
+            specialist_weight=residual_scale if enabled else 0,
+            model="pooled-contextual-residual" if enabled else "",
+            data_cutoff=pitcher_rows["game_date"].max().date().isoformat(),
+            reason=None if enabled else "validation_failed",
+            spec="pooled-contextual-residual" if enabled else None,
+            status="active" if enabled else "inactive",
+            residual_scale=residual_scale if enabled else None,
+            support={
+                "pregameValidation": int(
+                    validation_results[str(pitcher_id)]["support"]
+                )
+            },
+        )
+    residual_tree_count = residual.tree_count
+    del residual
+    gc.collect()
+    residual = train_final_residual(
+        pooled_validation,
+        pooled_global,
+        n_estimators=residual_tree_count,
+    )
 
     global_model = train_final_candidate(history, selected_spec, global_trees)
     global_game = predict_candidate(global_model, game, temperature=global_temperature)
-    final_game, source_types = personalize_by_pitcher(
-        game["pitcher_id"].to_numpy(), global_game, registry
+    game_correction = predict_correction(residual, game)
+    final_game, source_types = apply_pooled_residual_by_pitcher(
+        game["pitcher_id"].to_numpy(),
+        global_game,
+        game_correction,
+        registry,
+        prediction_dates=game["game_date"].dt.date.tolist(),
     )
     model_sources = []
     for pitcher_id, source_type in zip(
         game["pitcher_id"], source_types, strict=True
     ):
         entry = registry.get(int(pitcher_id))
-        weight = entry.specialist_weight if source_type == "hybrid" and entry else 0
+        weight = (
+            entry.residual_scale
+            if source_type != "global" and entry is not None
+            else 0
+        )
         model_sources.append(
             {
                 "type": source_type,
                 "label": (
-                    "Pitcher Personalizer + Global"
-                    if source_type == "hybrid"
+                    "Pooled Residual + Global"
+                    if source_type != "global"
                     else "MLB Global XGBoost"
                 ),
                 "globalWeight": 1 - weight,
                 "specialistWeight": weight,
+                "residualScale": weight,
             }
         )
     selection_artifact = {
@@ -392,10 +451,17 @@ def _pregame_hybrid(
             }
             for candidate in global_candidates
         ],
+        "residualSelection": residual_selection,
+        "residualTreeCount": residual_tree_count,
+        "trainingPool": len(pool),
         "validation": validation_results,
         "specialists": {
             str(pitcher_id): serialize_registry_entry(
-                entry, name=PILOT_PITCHERS[pitcher_id]
+                entry,
+                name=PILOT_PITCHERS.get(
+                    pitcher_id,
+                    f"선수 #{pitcher_id}",
+                ),
             )
             for pitcher_id, entry in registry.items()
         },
@@ -469,15 +535,15 @@ def build_demo(args: argparse.Namespace) -> None:
     _atomic_json(game_path, game_artifact)
     validation_metrics = {}
     manifest = {
-        "schemaVersion": 4,
+        "schemaVersion": 5,
         "generatedAt": generated_at,
         "evaluationMode": "historical_showcase",
         "caveat": game_artifact["caveat"],
         "dataScope": data_scope,
-        "finalModel": "global-pitcher-personalizer",
+        "finalModel": "global-pooled-contextual-residual",
         "pitchGroups": group_names(),
         "models": {
-            "final": "검증형 Global + Pitcher Personalizer",
+            "final": "검증형 Global + Pooled Residual",
             "xgboost": "MLB Global XGBoost",
             "similarity": "PitchPredict Similarity",
             "baseline": "상황별 빈도 기준선",
@@ -489,7 +555,7 @@ def build_demo(args: argparse.Namespace) -> None:
                 for specialist in experiment["specialists"].values()
             ),
             "referenceName": GLOBAL_SPEC.name,
-            "selectedName": "global-pitcher-personalizer",
+            "selectedName": "global-pooled-contextual-residual",
             "folds": ["pregame-chronological-validation"],
             "candidates": experiment["validation"],
             "specialists": experiment["specialists"],

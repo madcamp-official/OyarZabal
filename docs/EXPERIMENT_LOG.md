@@ -114,3 +114,26 @@ Git revision:
   0.4610, Log Loss 1.0012를 기록했다. 해당 경기에는 스플리터·포크가 0구여서
   클래스별 성능 판단에 사용할 수 없고, 이전 taxonomy 지표와 직접 비교하지
   않는다.
+
+## 2026-07-27 — pooled contextual residual 전체 학습
+
+- 2,990,491구에서 자격을 충족한 98명을 pooled residual 학습 풀로 사용했다.
+  Global은 `global-sqrt-d6-m8`, temperature `1.0465`로 고정했다.
+- 2023 OOF로 residual을 학습하고 2024에서 scale `0.5`를 선택했다. 2024
+  후보군 Log Loss는 1.2087에서 1.1977로, Accuracy는 0.4557에서 0.4646으로
+  개선됐다. Macro F1은 0.4324에서 0.4307로 0.0017 하락해 허용 범위
+  0.005 안에 머물렀다.
+- 선택에 사용하지 않은 2025 후보군 189,721구에서 Log Loss는 1.2237에서
+  1.2054로, Accuracy는 0.4508에서 0.4648로, Macro F1은 0.4346에서
+  0.4357로 개선돼 최종 전체 게이트를 통과했다.
+- 선수별 2024·2025 게이트 통과자는 53명이었으며 제품 상한을 적용해 active
+  25명을 노출한다. 2025 기록이 정확히 0구이고 2024 게이트를 통과한
+  provisional 6명 중 Gerrit Cole을 포함한 5명을 노출한다. 나머지는
+  `exposure_cap`으로 registry에 보존한다.
+- 첫 실행은 2024 표본이 0인 후보의 지표 계산을 시도해 실패했다. 빈 시즌을
+  `insufficient_2024_support`로 처리하도록 수정했다. 다음 실행 전에는 선수
+  ID를 Python `int`로 정규화해 registry JSON 직렬화 실패 가능성도 제거했다.
+  두 중단 모두 각 run의 `error.json`에 보존했다.
+- schema v5의 307구 역사적 쇼케이스는 Accuracy 0.5407, Top-3 Accuracy
+  0.9544, Macro F1 0.4639, Log Loss 0.9965를 기록했다. 이 값은 13명 캐시의
+  pregame 검증 결과이며 MLB-wide 2025 게이트와 분리해 해석한다.
