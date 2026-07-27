@@ -6,6 +6,7 @@ __pycache__/
 .coverage
 
 data/raw/
+data/holdout/
 data/processed/
 models/
 logs/

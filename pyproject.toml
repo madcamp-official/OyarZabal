@@ -29,6 +29,7 @@ oyarzabal-build-demo = "oyarzabal.pipeline:main"
 oyarzabal-fetch-statcast = "oyarzabal.data:main"
 oyarzabal-resource-snapshot = "oyarzabal.resources:main"
 oyarzabal-train-hybrid = "oyarzabal.training:main"
+oyarzabal-evaluate-holdout = "oyarzabal.holdout:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ml/oyarzabal"]
