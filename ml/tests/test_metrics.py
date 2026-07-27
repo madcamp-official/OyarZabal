@@ -4,6 +4,7 @@ from oyarzabal.metrics import (
     bootstrap_log_loss_gain,
     evaluate_diagnostics,
     evaluate_probabilities,
+    hierarchical_top_indices,
     validate_probability_matrix,
 )
 
@@ -27,7 +28,7 @@ def test_probability_rows_are_normalized() -> None:
     assert np.allclose(values, [[2 / 3, 1 / 3]])
 
 
-def test_hierarchical_accuracy_uses_the_exact_top1_family() -> None:
+def test_hierarchical_accuracy_chooses_family_then_child() -> None:
     probabilities = np.array(
         [
             [0.35, 0.05, 0.30, 0.25, 0.03, 0.02],
@@ -36,7 +37,7 @@ def test_hierarchical_accuracy_uses_the_exact_top1_family() -> None:
         ]
     )
     metrics = evaluate_probabilities(
-        [0, 2, 4],
+        [2, 2, 4],
         probabilities,
         labels=range(6),
         family_labels=[0, 0, 1, 1, 2, 2],
@@ -48,8 +49,12 @@ def test_hierarchical_accuracy_uses_the_exact_top1_family() -> None:
     assert metrics["hierarchicalAccuracy"] == pytest.approx(
         (metrics["accuracy"] + metrics["familyAccuracy"]) / 2
     )
-    # Row 1's summed BREAKING probability is higher, but the official exact
-    # Top-1 is FOUR_SEAM and therefore receives a full exact/family hit.
+    assert hierarchical_top_indices(
+        probabilities,
+        [0, 0, 1, 1, 2, 2],
+    ).tolist() == [2, 3, 0]
+    # Row 1 selects BREAKING by its summed probability, then SLIDER within it,
+    # even though FOUR_SEAM is the flat six-class argmax.
     assert probabilities[0, :2].sum() < probabilities[0, 2:4].sum()
 
 

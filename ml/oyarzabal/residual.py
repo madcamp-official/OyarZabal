@@ -18,6 +18,7 @@ from xgboost import XGBClassifier
 from .metrics import (
     bootstrap_log_loss_gain,
     evaluate_diagnostics,
+    hierarchical_top_indices,
     validate_probability_matrix,
 )
 from .taxonomy import PITCH_GROUP_FAMILY_LABELS, PITCH_GROUPS
@@ -148,7 +149,14 @@ def gate_feature_frame(
         ),
         "global_reference_js": js,
         "global_reference_top1_disagreement": (
-            global_values.argmax(axis=1) != reference.argmax(axis=1)
+            hierarchical_top_indices(
+                global_values,
+                PITCH_GROUP_FAMILY_LABELS,
+            )
+            != hierarchical_top_indices(
+                reference,
+                PITCH_GROUP_FAMILY_LABELS,
+            )
         ).astype(float),
     }
     for name in GATE_NUMERIC_FEATURES:

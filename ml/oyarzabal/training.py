@@ -864,9 +864,10 @@ def train_hybrid(
     gc.collect()
 
     result = {
-        "schemaVersion": 6,
+        "schemaVersion": 7,
         "modelVersion": "V7",
         "deploymentStatus": "shadow",
+        "decisionRule": "family-sum-then-child",
         "pitchGroups": [str(group) for group in PITCH_GROUPS],
         "pitchFamilies": family_names(),
         "pitchGroupFamilies": group_families(),

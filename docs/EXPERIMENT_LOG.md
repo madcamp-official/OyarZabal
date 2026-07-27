@@ -228,3 +228,26 @@ Git revision:
 - 첫 holdout 실행에서 평가 행이 0개인 stale 선수가 발생해 sklearn 진단이
   중단됐다. 공용 지표 함수가 빈 평가 slice를 0 support로 반환하도록 수정하고
   회귀 테스트를 추가했다.
+
+## 2026-07-27 — V7 계층 decoder 전면 재평가
+
+- 공식 선택을 평면 6종 argmax에서 `계열별 확률 합산 Top-1 → 선택 계열 내부
+  Top-1`로 변경했다. 공용 metrics, Gate disagreement, Replay `topPitch`,
+  UI 판정이 같은 decoder를 사용한다.
+- 새 Exact·Macro F1·Hierarchical·분포 조건으로 2024·2025 Registry를 다시
+  계산했다. 상태는 `full 10 / limited 40 / shadow 48`에서
+  `full 4 / limited 43 / shadow 51`로 바뀌었다.
+- 2025 98명 pool에서 V7은 Global 대비 Exact 45.40%→45.69%,
+  Family 56.31%→56.67%, Hierarchical 50.86%→51.18%, Log Loss
+  1.2150→1.2104로 개선했다.
+- 공개 2026 MLB 전체에서 V7 Final은 Exact 47.94%, Family 58.71%,
+  Hierarchical 53.33%, Log Loss 1.1359였다. V6를 같은 decoder로 다시
+  평가한 48.28%, 59.27%, 53.78%, 1.1290보다는 낮았다.
+- 고정 30명·28,734구에서 V5는 Exact 45.14%, Family 58.61%,
+  Hierarchical 51.88%, Log Loss 1.2422였고 V7은 44.53%, 57.83%,
+  51.18%, 1.2515였다. V7은 shadow를 유지한다.
+- 307구 쇼케이스 V7은 Exact 56.35%, Family 67.10%, Hierarchical
+  61.73%, Log Loss 0.9895를 기록했다. 이전 평면 판정 대비 세 정확도는 각각
+  3.26%p, 5.21%p, 4.24%p 높다.
+- 산출물은 Registry schema v7, Holdout schema v5, Replay schema v8로
+  올리고 `decisionRule=family-sum-then-child`를 기록했다.
