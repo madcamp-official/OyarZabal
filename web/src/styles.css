@@ -106,7 +106,8 @@ h1 em { color: transparent; font-style: normal; -webkit-text-stroke: 1px var(--a
 }
 .model-source span { color: var(--acid); letter-spacing: .1em; }
 .model-source strong { color: var(--paper); font-size: 12px; }
-.model-source.hybrid strong { color: var(--acid); }
+.model-source.hybrid strong,
+.model-source.reliability-gated-residual strong { color: var(--acid); }
 .recent { display: flex; align-items: center; gap: 8px; min-height: 28px; margin: -16px 0 24px; }
 .recent span, .recent small { color: var(--muted); font: 10px "IBM Plex Mono"; letter-spacing: .08em; }
 .recent i { min-width: 30px; padding: 4px 7px; color: var(--paper); background: #183027; font: normal 10px "IBM Plex Mono"; text-align: center; }

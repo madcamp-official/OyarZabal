@@ -18,7 +18,7 @@ import pandas as pd
 from .features import chronological_split, group_names, prepare_pitch_rows
 from .hybrid import (
     RegistryEntry,
-    apply_pooled_residual_by_pitcher,
+    apply_reliability_gated_residual,
     serialize_registry_entry,
     specialist_eligibility,
 )
@@ -33,10 +33,12 @@ from .modeling import (
 )
 from .residual import (
     apply_correction,
+    compute_pitcher_reliability,
     pitcher_residual_passes,
+    predict_context_gate,
     predict_correction,
-    select_residual_scale,
     train_final_residual,
+    train_gate,
     train_residual_with_tuning,
 )
 from .resources import assert_safe, snapshot
@@ -307,38 +309,101 @@ def _pregame_hybrid(
         if result["eligible"]
     )
     pooled_mask = validation["pitcher_id"].isin(pool).to_numpy()
-    pooled_validation = validation[pooled_mask]
+    pooled_validation = validation[pooled_mask].copy().reset_index(drop=True)
     pooled_global = global_validation_probabilities[pooled_mask]
     dates = np.array(
         sorted(pooled_validation["game_date"].dt.normalize().unique())
     )
-    cutoff = dates[max(1, min(len(dates) - 1, int(len(dates) * 0.6)))]
-    calibration_mask = (
-        pooled_validation["game_date"].dt.normalize().to_numpy() < cutoff
-    )
-    evaluation_mask = ~calibration_mask
+    if len(dates) < 10:
+        raise ValueError("pregame V6 validation requires at least ten dates")
+    residual_cutoff = dates[int(len(dates) * 0.5)]
+    gate_cutoff = dates[int(len(dates) * 0.75)]
+    tune_cutoff = dates[int(len(dates) * 0.85)]
+    normalized = pooled_validation["game_date"].dt.normalize().to_numpy()
+    residual_mask = normalized < residual_cutoff
+    gate_mask = (normalized >= residual_cutoff) & (normalized < gate_cutoff)
+    tune_mask = (normalized >= gate_cutoff) & (normalized < tune_cutoff)
+    evaluation_mask = normalized >= tune_cutoff
     residual = train_residual_with_tuning(
-        pooled_validation[calibration_mask],
-        pooled_global[calibration_mask],
+        pooled_validation[residual_mask],
+        pooled_global[residual_mask],
     )
-    evaluation_correction = predict_correction(
-        residual,
-        pooled_validation[evaluation_mask],
+    development_mask = gate_mask | tune_mask | evaluation_mask
+    development_correction = predict_correction(
+        residual, pooled_validation[development_mask]
     )
-    residual_selection = select_residual_scale(
-        pooled_validation.loc[evaluation_mask, "target"].to_numpy(),
-        pooled_global[evaluation_mask],
-        evaluation_correction,
+    development_rows = (
+        pooled_validation[development_mask].copy().reset_index(drop=True)
     )
-    residual_scale = float(residual_selection["scale"])
-    evaluation_candidate = apply_correction(
-        pooled_global[evaluation_mask],
-        evaluation_correction,
-        residual_scale,
+    development_global = pooled_global[development_mask]
+    development_dates = development_rows["game_date"].dt.normalize().to_numpy()
+    gate_train = development_dates < gate_cutoff
+    gate_tune = (development_dates >= gate_cutoff) & (
+        development_dates < tune_cutoff
     )
-    evaluation_rows = pooled_validation[evaluation_mask]
+    gate_evaluation = development_dates >= tune_cutoff
+    fitted_gate = train_gate(
+        development_rows[gate_train],
+        development_global[gate_train],
+        development_correction[gate_train],
+        n_estimators=1_000,
+        tuning=(
+            development_rows[gate_tune],
+            development_global[gate_tune],
+            development_correction[gate_tune],
+        ),
+    )
+    gate_tree_count = fitted_gate.tree_count
+    del fitted_gate
+    gate_development = gate_train | gate_tune
+    fitted_gate = train_gate(
+        development_rows[gate_development],
+        development_global[gate_development],
+        development_correction[gate_development],
+        n_estimators=gate_tree_count,
+    )
+    reference_development = apply_correction(
+        development_global[gate_development],
+        development_correction[gate_development],
+        0.5,
+    )
+    reliability_development = compute_pitcher_reliability(
+        development_rows[gate_development],
+        development_global[gate_development],
+        reference_development,
+        samples=200,
+    )
+    temporary_registry = {
+        pitcher_id: RegistryEntry(
+            pitcher_id=pitcher_id,
+            enabled=True,
+            specialist_weight=0,
+            model="pooled-contextual-residual",
+            status="active",
+            reliability=float(values["reliability"]),
+            reliability_components=values,
+        )
+        for pitcher_id, values in reliability_development.items()
+    }
+    context_gate = predict_context_gate(
+        fitted_gate,
+        development_rows[gate_evaluation],
+        development_global[gate_evaluation],
+        development_correction[gate_evaluation],
+    )
+    evaluation_candidate, _, _ = apply_reliability_gated_residual(
+        development_rows[gate_evaluation],
+        development_global[gate_evaluation],
+        development_correction[gate_evaluation],
+        context_gate,
+        temporary_registry,
+    )
+    evaluation_rows = (
+        development_rows[gate_evaluation].copy().reset_index(drop=True)
+    )
+    evaluation_global = development_global[gate_evaluation]
     validation_results: dict[str, object] = {}
-    accepted = []
+    active_ids = set()
     for pitcher_id in pool:
         positions = np.flatnonzero(
             evaluation_rows["pitcher_id"].to_numpy() == pitcher_id
@@ -353,43 +418,61 @@ def _pregame_hybrid(
             continue
         passed, global_metrics, candidate_metrics = pitcher_residual_passes(
             evaluation_rows["target"].to_numpy()[positions],
-            pooled_global[evaluation_mask][positions],
+            evaluation_global[positions],
             evaluation_candidate[positions],
+            min_support=50,
         )
         score = float(global_metrics["logLoss"] - candidate_metrics["logLoss"])
         record = {
             "name": PILOT_PITCHERS.get(pitcher_id, f"선수 #{pitcher_id}"),
             "eligibility": eligibility[pitcher_id],
             "support": int(len(positions)),
-            "accepted": bool(residual_selection["accepted"] and passed),
+            "accepted": bool(passed),
             "globalMetrics": global_metrics,
             "metrics": candidate_metrics,
             "score": score,
         }
         validation_results[str(pitcher_id)] = record
         if record["accepted"]:
-            accepted.append((pitcher_id, score, len(positions)))
-    active_ids = {
-        pitcher_id
-        for pitcher_id, _, _ in sorted(
-            accepted,
-            key=lambda value: (-value[1], -value[2]),
-        )[:25]
-    }
+            active_ids.add(pitcher_id)
+
+    reference_all_development = apply_correction(
+        development_global,
+        development_correction,
+        0.5,
+    )
+    reliability_final = compute_pitcher_reliability(
+        development_rows,
+        development_global,
+        reference_all_development,
+        samples=200,
+    )
     registry = {}
     for pitcher_id in pool:
         enabled = pitcher_id in active_ids
         pitcher_rows = history[history["pitcher_id"] == pitcher_id]
+        reliability = reliability_final.get(
+            pitcher_id,
+            {
+                "n": 0,
+                "supportCoefficient": 0,
+                "pAll": 0,
+                "pRecent": 0,
+                "reliability": 0,
+                "recentSupport": 0,
+            },
+        )
         registry[pitcher_id] = RegistryEntry(
             pitcher_id=pitcher_id,
             enabled=enabled,
-            specialist_weight=residual_scale if enabled else 0,
+            specialist_weight=0,
             model="pooled-contextual-residual" if enabled else "",
             data_cutoff=pitcher_rows["game_date"].max().date().isoformat(),
             reason=None if enabled else "validation_failed",
-            spec="pooled-contextual-residual" if enabled else None,
-            status="active" if enabled else "inactive",
-            residual_scale=residual_scale if enabled else None,
+            spec="v6-reliability-gated-residual" if enabled else None,
+            status="active" if enabled else "shadow",
+            reliability=float(reliability["reliability"]),
+            reliability_components=reliability,
             support={
                 "pregameValidation": int(
                     validation_results[str(pitcher_id)]["support"]
@@ -404,38 +487,46 @@ def _pregame_hybrid(
         pooled_global,
         n_estimators=residual_tree_count,
     )
+    final_gate = train_gate(
+        development_rows,
+        development_global,
+        development_correction,
+        n_estimators=gate_tree_count,
+    )
 
     global_model = train_final_candidate(history, selected_spec, global_trees)
     global_game = predict_candidate(global_model, game, temperature=global_temperature)
     game_correction = predict_correction(residual, game)
-    final_game, source_types = apply_pooled_residual_by_pitcher(
-        game["pitcher_id"].to_numpy(),
+    game_context_gate = predict_context_gate(
+        final_gate,
+        game,
         global_game,
         game_correction,
+    )
+    final_game, source_types, routing = apply_reliability_gated_residual(
+        game,
+        global_game,
+        game_correction,
+        game_context_gate,
         registry,
         prediction_dates=game["game_date"].dt.date.tolist(),
     )
     model_sources = []
-    for pitcher_id, source_type in zip(
-        game["pitcher_id"], source_types, strict=True
+    for _pitcher_id, source_type, route in zip(
+        game["pitcher_id"], source_types, routing, strict=True
     ):
-        entry = registry.get(int(pitcher_id))
-        weight = (
-            entry.residual_scale
-            if source_type != "global" and entry is not None
-            else 0
-        )
+        weight = float(route["effectiveScale"])
         model_sources.append(
             {
                 "type": source_type,
                 "label": (
-                    "Pooled Residual + Global"
+                    "V6 Reliability-Gated Residual"
                     if source_type != "global"
                     else "MLB Global XGBoost"
                 ),
                 "globalWeight": 1 - weight,
                 "specialistWeight": weight,
-                "residualScale": weight,
+                **route,
             }
         )
     selection_artifact = {
@@ -451,8 +542,14 @@ def _pregame_hybrid(
             }
             for candidate in global_candidates
         ],
-        "residualSelection": residual_selection,
+        "residualSelection": {
+            "formula": "0.5 * n/(n+1000) * min(pAll,pRecent) * contextGate",
+            "activeCount": len(active_ids),
+            "jsCap": 0.05,
+            "probabilityShiftCap": 0.20,
+        },
         "residualTreeCount": residual_tree_count,
+        "gateTreeCount": gate_tree_count,
         "trainingPool": len(pool),
         "validation": validation_results,
         "specialists": {
@@ -535,15 +632,16 @@ def build_demo(args: argparse.Namespace) -> None:
     _atomic_json(game_path, game_artifact)
     validation_metrics = {}
     manifest = {
-        "schemaVersion": 5,
+        "schemaVersion": 6,
         "generatedAt": generated_at,
         "evaluationMode": "historical_showcase",
+        "deploymentStatus": "shadow",
         "caveat": game_artifact["caveat"],
         "dataScope": data_scope,
-        "finalModel": "global-pooled-contextual-residual",
+        "finalModel": "v6-reliability-gated-residual",
         "pitchGroups": group_names(),
         "models": {
-            "final": "검증형 Global + Pooled Residual",
+            "final": "V6 Reliability-Gated Residual (Shadow)",
             "xgboost": "MLB Global XGBoost",
             "similarity": "PitchPredict Similarity",
             "baseline": "상황별 빈도 기준선",
@@ -555,7 +653,7 @@ def build_demo(args: argparse.Namespace) -> None:
                 for specialist in experiment["specialists"].values()
             ),
             "referenceName": GLOBAL_SPEC.name,
-            "selectedName": "global-pooled-contextual-residual",
+            "selectedName": "v6-reliability-gated-residual",
             "folds": ["pregame-chronological-validation"],
             "candidates": experiment["validation"],
             "specialists": experiment["specialists"],

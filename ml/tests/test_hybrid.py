@@ -5,6 +5,7 @@ from oyarzabal.hybrid import (
     RegistryEntry,
     apply_logit_bias,
     apply_pooled_residual_by_pitcher,
+    apply_reliability_gated_residual,
     blend_by_pitcher,
     blend_probabilities,
     fit_logit_bias,
@@ -109,11 +110,21 @@ def test_blend_rejects_invalid_weight() -> None:
 
 
 def test_registry_serialization_uses_public_schema_names() -> None:
-    entry = RegistryEntry(10, True, 0.75, "specialist-10.pkl", "2025-12-31")
+    entry = RegistryEntry(
+        10,
+        True,
+        0.75,
+        "specialist-10.pkl",
+        "2025-12-31",
+        reliability=0.2,
+        reliability_components={"n": 1_000, "pAll": 0.7, "pRecent": 0.6},
+    )
     payload = serialize_registry_entry(entry, name="Pitcher")
     assert payload["pitcherId"] == 10
     assert payload["globalWeight"] == 0.25
     assert payload["specialistWeight"] == 0.75
+    assert payload["reliability"] == 0.2
+    assert payload["reliabilityComponents"]["pRecent"] == 0.6
     assert "pitcher_id" not in payload
 
 
@@ -223,3 +234,43 @@ def test_pooled_residual_routes_only_enabled_pitchers() -> None:
     assert adjusted[0, 0] > global_probabilities[0, 0]
     assert adjusted[1] == pytest.approx(global_probabilities[1])
     assert sources == ["pooled-residual", "global"]
+
+
+def test_reliability_router_exposes_scale_components_and_fallbacks() -> None:
+    rows = pd.DataFrame(
+        {
+            "pitcher_id": [10, 20],
+            "count_support": [30, 30],
+            "stand_support": [30, 30],
+            "transition_support": [30, 30],
+            "pa_prev_pitch_1": ["FOUR_SEAM", "FOUR_SEAM"],
+        }
+    )
+    global_probabilities = np.full((2, 6), 1 / 6)
+    correction = np.array([[2, -2, 0, 0, 0, 0], [2, -2, 0, 0, 0, 0]])
+    registry = {
+        10: RegistryEntry(
+            pitcher_id=10,
+            enabled=True,
+            specialist_weight=0,
+            model="pooled-residual.pkl",
+            status="active",
+            reliability=0.4,
+        )
+    }
+
+    adjusted, sources, routing = apply_reliability_gated_residual(
+        rows,
+        global_probabilities,
+        correction,
+        np.array([0.5, 0.5]),
+        registry,
+    )
+
+    assert adjusted[0, 0] > global_probabilities[0, 0]
+    assert adjusted[1] == pytest.approx(global_probabilities[1])
+    assert sources == ["reliability-gated-residual", "global"]
+    assert routing[0]["pitcherReliability"] == 0.4
+    assert routing[0]["contextGate"] == 0.5
+    assert routing[0]["effectiveScale"] == pytest.approx(0.2)
+    assert routing[1]["hardGateReason"] == "registry_inactive"

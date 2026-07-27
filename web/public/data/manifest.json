@@ -1,7 +1,8 @@
 {
-  "schemaVersion": 5,
-  "generatedAt": "2026-07-27T02:49:40.854309+00:00",
+  "schemaVersion": 6,
+  "generatedAt": "2026-07-27T07:21:57.274477+00:00",
   "evaluationMode": "historical_showcase",
+  "deploymentStatus": "shadow",
   "caveat": "제품 검증용 역사적 쇼케이스이며, 동결된 2026 홀드아웃 결과가 아닙니다. 현재 산출물은 13명 캐시로 만든 중간 검증본입니다.",
   "dataScope": {
     "startDate": "2015-03-15",
@@ -9,7 +10,7 @@
     "pitcherCount": 13,
     "mlbWide": false
   },
-  "finalModel": "global-pooled-contextual-residual",
+  "finalModel": "v6-reliability-gated-residual",
   "pitchGroups": {
     "FOUR_SEAM": "포심",
     "MOVING_FASTBALL": "무빙 패스트볼",
@@ -19,7 +20,7 @@
     "SPLITTER_FORK": "스플리터·포크"
   },
   "models": {
-    "final": "검증형 Global + Pooled Residual",
+    "final": "V6 Reliability-Gated Residual (Shadow)",
     "xgboost": "MLB Global XGBoost",
     "similarity": "PitchPredict Similarity",
     "baseline": "상황별 빈도 기준선"
@@ -28,7 +29,7 @@
   "selection": {
     "accepted": true,
     "referenceName": "global-sqrt-d6-m8",
-    "selectedName": "global-pooled-contextual-residual",
+    "selectedName": "v6-reliability-gated-residual",
     "folds": [
       "pregame-chronological-validation"
     ],
@@ -43,143 +44,173 @@
           "recentPitchCount": 504,
           "repertoirePitchGroups": 3
         },
-        "support": 504,
-        "accepted": true,
+        "support": 27,
+        "accepted": false,
         "globalMetrics": {
-          "n": 504,
-          "accuracy": 0.4742063492063492,
-          "top3Accuracy": 0.9464285714285714,
-          "macroF1": 0.21992890065705598,
-          "logLoss": 2.174749735648294,
+          "n": 27,
+          "accuracy": 0.4444444444444444,
+          "top3Accuracy": 1.0,
+          "macroF1": 0.21263157894736842,
+          "logLoss": 1.093343606048807,
           "actualDistribution": {
-            "FOUR_SEAM": 0.34523809523809523,
-            "MOVING_FASTBALL": 0.011904761904761904,
-            "SLIDER": 0.4365079365079365,
-            "CURVE": 0.16071428571428573,
-            "CHANGEUP": 0.003968253968253968,
-            "SPLITTER_FORK": 0.041666666666666664
-          },
-          "predictedDistribution": {
-            "FOUR_SEAM": 0.17857142857142858,
+            "FOUR_SEAM": 0.48148148148148145,
             "MOVING_FASTBALL": 0.0,
-            "SLIDER": 0.5853174603174603,
-            "CURVE": 0.2361111111111111,
+            "SLIDER": 0.3333333333333333,
+            "CURVE": 0.18518518518518517,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
+          "predictedDistribution": {
+            "FOUR_SEAM": 0.2222222222222222,
+            "MOVING_FASTBALL": 0.0,
+            "SLIDER": 0.5925925925925926,
+            "CURVE": 0.18518518518518517,
+            "CHANGEUP": 0.0,
+            "SPLITTER_FORK": 0.0
+          },
+          "classShareError": {
+            "FOUR_SEAM": -0.25925925925925924,
+            "MOVING_FASTBALL": 0.0,
+            "SLIDER": 0.25925925925925924,
+            "CURVE": 0.0,
+            "CHANGEUP": 0.0,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.25925925925925924,
+          "totalVariationDistance": 0.25925925925925924,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.14599385824190392,
+            "MOVING_FASTBALL": 0.005375519997669969,
+            "SLIDER": 0.09192058442708129,
+            "CURVE": 0.04281344404255352,
+            "CHANGEUP": 0.005884309774303137,
+            "SPLITTER_FORK": 2.960088384572892e-13
+          },
+          "maxClassCalibrationError": 0.14599385824190392,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.5888888888888889,
-              "recall": 0.3045977011494253,
-              "f1": 0.4015151515151515,
-              "support": 174
+              "precision": 0.5,
+              "recall": 0.23076923076923078,
+              "f1": 0.3157894736842105,
+              "support": 13
             },
             "MOVING_FASTBALL": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 6
+              "support": 0
             },
             "SLIDER": {
-              "precision": 0.5220338983050847,
-              "recall": 0.7,
-              "f1": 0.5980582524271845,
-              "support": 220
+              "precision": 0.4375,
+              "recall": 0.7777777777777778,
+              "f1": 0.56,
+              "support": 9
             },
             "CURVE": {
-              "precision": 0.2689075630252101,
-              "recall": 0.3950617283950617,
-              "f1": 0.32,
-              "support": 81
+              "precision": 0.4,
+              "recall": 0.4,
+              "f1": 0.4,
+              "support": 5
             },
             "CHANGEUP": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 2
+              "support": 0
             },
             "SPLITTER_FORK": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 21
+              "support": 0
             }
           },
-          "zeroRecallClasses": [
-            "MOVING_FASTBALL",
-            "CHANGEUP",
-            "SPLITTER_FORK"
-          ],
-          "majorityPredictionGap": 0.14880952380952384
+          "zeroRecallClasses": [],
+          "majorityPredictionGap": 0.1111111111111111
         },
         "metrics": {
-          "n": 504,
-          "accuracy": 0.4861111111111111,
-          "top3Accuracy": 0.9464285714285714,
-          "macroF1": 0.22722978861692542,
-          "logLoss": 2.115467616248131,
+          "n": 27,
+          "accuracy": 0.4444444444444444,
+          "top3Accuracy": 1.0,
+          "macroF1": 0.21263157894736842,
+          "logLoss": 1.0898708243730706,
           "actualDistribution": {
-            "FOUR_SEAM": 0.34523809523809523,
-            "MOVING_FASTBALL": 0.011904761904761904,
-            "SLIDER": 0.4365079365079365,
-            "CURVE": 0.16071428571428573,
-            "CHANGEUP": 0.003968253968253968,
-            "SPLITTER_FORK": 0.041666666666666664
-          },
-          "predictedDistribution": {
-            "FOUR_SEAM": 0.21031746031746032,
+            "FOUR_SEAM": 0.48148148148148145,
             "MOVING_FASTBALL": 0.0,
-            "SLIDER": 0.5734126984126984,
-            "CURVE": 0.21626984126984128,
+            "SLIDER": 0.3333333333333333,
+            "CURVE": 0.18518518518518517,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
+          "predictedDistribution": {
+            "FOUR_SEAM": 0.2222222222222222,
+            "MOVING_FASTBALL": 0.0,
+            "SLIDER": 0.5925925925925926,
+            "CURVE": 0.18518518518518517,
+            "CHANGEUP": 0.0,
+            "SPLITTER_FORK": 0.0
+          },
+          "classShareError": {
+            "FOUR_SEAM": -0.25925925925925924,
+            "MOVING_FASTBALL": 0.0,
+            "SLIDER": 0.25925925925925924,
+            "CURVE": 0.0,
+            "CHANGEUP": 0.0,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.25925925925925924,
+          "totalVariationDistance": 0.25925925925925924,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.1391928169802819,
+            "MOVING_FASTBALL": 0.005411053933826254,
+            "SLIDER": 0.08808744479801328,
+            "CURVE": 0.039647538701654356,
+            "CHANGEUP": 0.006046779545778608,
+            "SPLITTER_FORK": 1.0093566311637758e-12
+          },
+          "maxClassCalibrationError": 0.1391928169802819,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.5566037735849056,
-              "recall": 0.3390804597701149,
-              "f1": 0.42142857142857143,
-              "support": 174
+              "precision": 0.5,
+              "recall": 0.23076923076923078,
+              "f1": 0.3157894736842105,
+              "support": 13
             },
             "MOVING_FASTBALL": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 6
+              "support": 0
             },
             "SLIDER": {
-              "precision": 0.532871972318339,
-              "recall": 0.7,
-              "f1": 0.6051080550098232,
-              "support": 220
+              "precision": 0.4375,
+              "recall": 0.7777777777777778,
+              "f1": 0.56,
+              "support": 9
             },
             "CURVE": {
-              "precision": 0.29357798165137616,
-              "recall": 0.3950617283950617,
-              "f1": 0.3368421052631579,
-              "support": 81
+              "precision": 0.4,
+              "recall": 0.4,
+              "f1": 0.4,
+              "support": 5
             },
             "CHANGEUP": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 2
+              "support": 0
             },
             "SPLITTER_FORK": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 21
+              "support": 0
             }
           },
-          "zeroRecallClasses": [
-            "MOVING_FASTBALL",
-            "CHANGEUP",
-            "SPLITTER_FORK"
-          ],
-          "majorityPredictionGap": 0.13690476190476186
+          "zeroRecallClasses": [],
+          "majorityPredictionGap": 0.1111111111111111
         },
-        "score": 0.05928211940016315
+        "score": 0.0034727816757365026
       },
       "543037": {
         "name": "Gerrit Cole",
@@ -191,60 +222,79 @@
           "recentPitchCount": 1829,
           "repertoirePitchGroups": 5
         },
-        "support": 1790,
-        "accepted": true,
+        "support": 796,
+        "accepted": false,
         "globalMetrics": {
-          "n": 1790,
-          "accuracy": 0.4005586592178771,
-          "top3Accuracy": 0.8044692737430168,
-          "macroF1": 0.21118604920972547,
-          "logLoss": 1.4055465697372025,
+          "n": 796,
+          "accuracy": 0.38819095477386933,
+          "top3Accuracy": 0.7977386934673367,
+          "macroF1": 0.16485942267725948,
+          "logLoss": 1.4118850743479558,
           "actualDistribution": {
-            "FOUR_SEAM": 0.4547486033519553,
-            "MOVING_FASTBALL": 0.16815642458100558,
-            "SLIDER": 0.14804469273743018,
-            "CURVE": 0.18994413407821228,
-            "CHANGEUP": 0.03910614525139665,
+            "FOUR_SEAM": 0.4472361809045226,
+            "MOVING_FASTBALL": 0.16080402010050251,
+            "SLIDER": 0.15326633165829145,
+            "CURVE": 0.1984924623115578,
+            "CHANGEUP": 0.04020100502512563,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
-            "FOUR_SEAM": 0.6134078212290502,
-            "MOVING_FASTBALL": 0.006145251396648044,
-            "SLIDER": 0.1558659217877095,
-            "CURVE": 0.20782122905027933,
-            "CHANGEUP": 0.01675977653631285,
+            "FOUR_SEAM": 0.6633165829145728,
+            "MOVING_FASTBALL": 0.002512562814070352,
+            "SLIDER": 0.11934673366834171,
+            "CURVE": 0.20979899497487436,
+            "CHANGEUP": 0.005025125628140704,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": 0.21608040201005024,
+            "MOVING_FASTBALL": -0.15829145728643215,
+            "SLIDER": -0.03391959798994974,
+            "CURVE": 0.011306532663316576,
+            "CHANGEUP": -0.035175879396984924,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.21608040201005024,
+          "totalVariationDistance": 0.22738693467336682,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.08880435665648356,
+            "MOVING_FASTBALL": -0.042253733147147046,
+            "SLIDER": 0.0208373886230884,
+            "CURVE": 0.04115000416123288,
+            "CHANGEUP": 0.06907069701900723,
+            "SPLITTER_FORK": 3.025707023897604e-13
+          },
+          "maxClassCalibrationError": 0.08880435665648356,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.4990892531876138,
-              "recall": 0.6732186732186732,
-              "f1": 0.5732217573221757,
-              "support": 814
+              "precision": 0.4753787878787879,
+              "recall": 0.7050561797752809,
+              "f1": 0.5678733031674208,
+              "support": 356
             },
             "MOVING_FASTBALL": {
-              "precision": 0.18181818181818182,
-              "recall": 0.006644518272425249,
-              "f1": 0.01282051282051282,
-              "support": 301
+              "precision": 0.5,
+              "recall": 0.0078125,
+              "f1": 0.015384615384615385,
+              "support": 128
             },
             "SLIDER": {
-              "precision": 0.23655913978494625,
-              "recall": 0.2490566037735849,
-              "f1": 0.2426470588235294,
-              "support": 265
+              "precision": 0.18947368421052632,
+              "recall": 0.14754098360655737,
+              "f1": 0.16589861751152074,
+              "support": 122
             },
             "CURVE": {
-              "precision": 0.24731182795698925,
-              "recall": 0.27058823529411763,
-              "f1": 0.25842696629213485,
-              "support": 340
+              "precision": 0.23353293413173654,
+              "recall": 0.2468354430379747,
+              "f1": 0.24,
+              "support": 158
             },
             "CHANGEUP": {
-              "precision": 0.3,
-              "recall": 0.12857142857142856,
-              "f1": 0.18,
-              "support": 70
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 32
             },
             "SPLITTER_FORK": {
               "precision": 0.0,
@@ -253,61 +303,82 @@
               "support": 0
             }
           },
-          "zeroRecallClasses": [],
-          "majorityPredictionGap": 0.15865921787709492
+          "zeroRecallClasses": [
+            "CHANGEUP"
+          ],
+          "majorityPredictionGap": 0.21608040201005024
         },
         "metrics": {
-          "n": 1790,
-          "accuracy": 0.4340782122905028,
-          "top3Accuracy": 0.829050279329609,
-          "macroF1": 0.17655713103211731,
-          "logLoss": 1.3695751240603935,
+          "n": 796,
+          "accuracy": 0.4183417085427136,
+          "top3Accuracy": 0.8178391959798995,
+          "macroF1": 0.15750618537842945,
+          "logLoss": 1.389738746193336,
           "actualDistribution": {
-            "FOUR_SEAM": 0.4547486033519553,
-            "MOVING_FASTBALL": 0.16815642458100558,
-            "SLIDER": 0.14804469273743018,
-            "CURVE": 0.18994413407821228,
-            "CHANGEUP": 0.03910614525139665,
+            "FOUR_SEAM": 0.4472361809045226,
+            "MOVING_FASTBALL": 0.16080402010050251,
+            "SLIDER": 0.15326633165829145,
+            "CURVE": 0.1984924623115578,
+            "CHANGEUP": 0.04020100502512563,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
-            "FOUR_SEAM": 0.8122905027932961,
-            "MOVING_FASTBALL": 0.01675977653631285,
-            "SLIDER": 0.08826815642458101,
-            "CURVE": 0.0782122905027933,
-            "CHANGEUP": 0.004469273743016759,
+            "FOUR_SEAM": 0.7788944723618091,
+            "MOVING_FASTBALL": 0.005025125628140704,
+            "SLIDER": 0.08165829145728644,
+            "CURVE": 0.13190954773869346,
+            "CHANGEUP": 0.002512562814070352,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": 0.3316582914572865,
+            "MOVING_FASTBALL": -0.15577889447236182,
+            "SLIDER": -0.07160804020100502,
+            "CURVE": -0.06658291457286433,
+            "CHANGEUP": -0.03768844221105528,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.3316582914572865,
+          "totalVariationDistance": 0.3316582914572865,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.06969675617391774,
+            "MOVING_FASTBALL": -0.02968567255199661,
+            "SLIDER": 0.018906245388613685,
+            "CURVE": 0.024242709694013376,
+            "CHANGEUP": 0.05623347364228553,
+            "SPLITTER_FORK": 1.0016677567014773e-12
+          },
+          "maxClassCalibrationError": 0.06969675617391774,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.47730398899587345,
-              "recall": 0.8525798525798526,
-              "f1": 0.6119929453262787,
-              "support": 814
+              "precision": 0.47419354838709676,
+              "recall": 0.8258426966292135,
+              "f1": 0.6024590163934426,
+              "support": 356
             },
             "MOVING_FASTBALL": {
-              "precision": 0.3,
-              "recall": 0.029900332225913623,
-              "f1": 0.054380664652567974,
-              "support": 301
+              "precision": 0.5,
+              "recall": 0.015625,
+              "f1": 0.030303030303030304,
+              "support": 128
             },
             "SLIDER": {
-              "precision": 0.22784810126582278,
-              "recall": 0.13584905660377358,
-              "f1": 0.1702127659574468,
-              "support": 265
+              "precision": 0.15384615384615385,
+              "recall": 0.08196721311475409,
+              "f1": 0.10695187165775401,
+              "support": 122
             },
             "CURVE": {
-              "precision": 0.25,
-              "recall": 0.10294117647058823,
-              "f1": 0.14583333333333334,
-              "support": 340
+              "precision": 0.2571428571428571,
+              "recall": 0.17088607594936708,
+              "f1": 0.20532319391634982,
+              "support": 158
             },
             "CHANGEUP": {
-              "precision": 0.375,
-              "recall": 0.04285714285714286,
-              "f1": 0.07692307692307693,
-              "support": 70
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0,
+              "support": 32
             },
             "SPLITTER_FORK": {
               "precision": 0.0,
@@ -316,10 +387,12 @@
               "support": 0
             }
           },
-          "zeroRecallClasses": [],
-          "majorityPredictionGap": 0.35754189944134074
+          "zeroRecallClasses": [
+            "CHANGEUP"
+          ],
+          "majorityPredictionGap": 0.3316582914572865
         },
-        "score": 0.03597144567680899
+        "score": 0.02214632815461992
       },
       "592454": {
         "name": "Tommy Kahnle",
@@ -331,48 +404,67 @@
           "recentPitchCount": 866,
           "repertoirePitchGroups": 3
         },
-        "support": 834,
-        "accepted": true,
+        "support": 272,
+        "accepted": false,
         "globalMetrics": {
-          "n": 834,
-          "accuracy": 0.7637889688249401,
-          "top3Accuracy": 0.9844124700239808,
-          "macroF1": 0.16756713005119486,
-          "logLoss": 0.7197077327618883,
+          "n": 272,
+          "accuracy": 0.8161764705882353,
+          "top3Accuracy": 0.9889705882352942,
+          "macroF1": 0.15827600583698145,
+          "logLoss": 0.6533115588961984,
           "actualDistribution": {
-            "FOUR_SEAM": 0.17985611510791366,
-            "MOVING_FASTBALL": 0.016786570743405275,
-            "SLIDER": 0.045563549160671464,
+            "FOUR_SEAM": 0.1323529411764706,
+            "MOVING_FASTBALL": 0.025735294117647058,
+            "SLIDER": 0.022058823529411766,
             "CURVE": 0.0,
-            "CHANGEUP": 0.7577937649880095,
+            "CHANGEUP": 0.8198529411764706,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
-            "FOUR_SEAM": 0.025179856115107913,
+            "FOUR_SEAM": 0.011029411764705883,
             "MOVING_FASTBALL": 0.0,
             "SLIDER": 0.0,
             "CURVE": 0.0,
-            "CHANGEUP": 0.9748201438848921,
+            "CHANGEUP": 0.9889705882352942,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": -0.1213235294117647,
+            "MOVING_FASTBALL": -0.025735294117647058,
+            "SLIDER": -0.022058823529411766,
+            "CURVE": 0.0,
+            "CHANGEUP": 0.1691176470588236,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.1691176470588236,
+          "totalVariationDistance": 0.16911764705882357,
+          "classCalibrationError": {
+            "FOUR_SEAM": 0.1407915038465675,
+            "MOVING_FASTBALL": 0.009271218351414381,
+            "SLIDER": 0.006790545079459344,
+            "CURVE": 0.0013279320276441621,
+            "CHANGEUP": -0.15818119930538044,
+            "SPLITTER_FORK": 2.9456160980978623e-13
+          },
+          "maxClassCalibrationError": 0.15818119930538044,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.5714285714285714,
-              "recall": 0.08,
-              "f1": 0.14035087719298245,
-              "support": 150
+              "precision": 0.3333333333333333,
+              "recall": 0.027777777777777776,
+              "f1": 0.05128205128205128,
+              "support": 36
             },
             "MOVING_FASTBALL": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 14
+              "support": 7
             },
             "SLIDER": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 38
+              "support": 6
             },
             "CURVE": {
               "precision": 0.0,
@@ -381,10 +473,10 @@
               "support": 0
             },
             "CHANGEUP": {
-              "precision": 0.7687576875768758,
-              "recall": 0.9889240506329114,
-              "f1": 0.8650519031141869,
-              "support": 632
+              "precision": 0.8215613382899628,
+              "recall": 0.9910313901345291,
+              "f1": 0.8983739837398373,
+              "support": 223
             },
             "SPLITTER_FORK": {
               "precision": 0.0,
@@ -397,48 +489,67 @@
             "MOVING_FASTBALL",
             "SLIDER"
           ],
-          "majorityPredictionGap": 0.2170263788968826
+          "majorityPredictionGap": 0.1691176470588236
         },
         "metrics": {
-          "n": 834,
-          "accuracy": 0.7649880095923262,
-          "top3Accuracy": 0.9820143884892086,
-          "macroF1": 0.16449416560281305,
-          "logLoss": 0.7085440720472346,
+          "n": 272,
+          "accuracy": 0.8161764705882353,
+          "top3Accuracy": 0.9889705882352942,
+          "macroF1": 0.15827600583698145,
+          "logLoss": 0.6462930435234489,
           "actualDistribution": {
-            "FOUR_SEAM": 0.17985611510791366,
-            "MOVING_FASTBALL": 0.016786570743405275,
-            "SLIDER": 0.045563549160671464,
+            "FOUR_SEAM": 0.1323529411764706,
+            "MOVING_FASTBALL": 0.025735294117647058,
+            "SLIDER": 0.022058823529411766,
             "CURVE": 0.0,
-            "CHANGEUP": 0.7577937649880095,
+            "CHANGEUP": 0.8198529411764706,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
-            "FOUR_SEAM": 0.016786570743405275,
+            "FOUR_SEAM": 0.011029411764705883,
             "MOVING_FASTBALL": 0.0,
             "SLIDER": 0.0,
             "CURVE": 0.0,
-            "CHANGEUP": 0.9832134292565947,
+            "CHANGEUP": 0.9889705882352942,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": -0.1213235294117647,
+            "MOVING_FASTBALL": -0.025735294117647058,
+            "SLIDER": -0.022058823529411766,
+            "CURVE": 0.0,
+            "CHANGEUP": 0.1691176470588236,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.1691176470588236,
+          "totalVariationDistance": 0.16911764705882357,
+          "classCalibrationError": {
+            "FOUR_SEAM": 0.128740990307759,
+            "MOVING_FASTBALL": 0.01082505286709029,
+            "SLIDER": 0.006398674150558278,
+            "CURVE": 0.0012507738517172817,
+            "CHANGEUP": -0.14721549117812416,
+            "SPLITTER_FORK": 9.987969472092104e-13
+          },
+          "maxClassCalibrationError": 0.14721549117812416,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.7142857142857143,
-              "recall": 0.06666666666666667,
-              "f1": 0.12195121951219512,
-              "support": 150
+              "precision": 0.3333333333333333,
+              "recall": 0.027777777777777776,
+              "f1": 0.05128205128205128,
+              "support": 36
             },
             "MOVING_FASTBALL": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 14
+              "support": 7
             },
             "SLIDER": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 38
+              "support": 6
             },
             "CURVE": {
               "precision": 0.0,
@@ -447,10 +558,10 @@
               "support": 0
             },
             "CHANGEUP": {
-              "precision": 0.7658536585365854,
-              "recall": 0.9936708860759493,
-              "f1": 0.8650137741046832,
-              "support": 632
+              "precision": 0.8215613382899628,
+              "recall": 0.9910313901345291,
+              "f1": 0.8983739837398373,
+              "support": 223
             },
             "SPLITTER_FORK": {
               "precision": 0.0,
@@ -463,9 +574,9 @@
             "MOVING_FASTBALL",
             "SLIDER"
           ],
-          "majorityPredictionGap": 0.22541966426858517
+          "majorityPredictionGap": 0.1691176470588236
         },
-        "score": 0.01116366071465369
+        "score": 0.007018515372749556
       },
       "595014": {
         "name": "Blake Treinen",
@@ -477,48 +588,67 @@
           "recentPitchCount": 865,
           "repertoirePitchGroups": 3
         },
-        "support": 747,
+        "support": 325,
         "accepted": false,
         "globalMetrics": {
-          "n": 747,
-          "accuracy": 0.5742971887550201,
+          "n": 325,
+          "accuracy": 0.5046153846153846,
           "top3Accuracy": 1.0,
-          "macroF1": 0.18515443387500707,
-          "logLoss": 0.9428765287862093,
+          "macroF1": 0.1690822448828424,
+          "logLoss": 1.0424687157034094,
           "actualDistribution": {
-            "FOUR_SEAM": 0.11780455153949129,
-            "MOVING_FASTBALL": 0.48460508701472554,
-            "SLIDER": 0.39759036144578314,
+            "FOUR_SEAM": 0.14461538461538462,
+            "MOVING_FASTBALL": 0.4153846153846154,
+            "SLIDER": 0.44,
             "CURVE": 0.0,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
             "FOUR_SEAM": 0.0,
-            "MOVING_FASTBALL": 0.8232931726907631,
-            "SLIDER": 0.17670682730923695,
+            "MOVING_FASTBALL": 0.8184615384615385,
+            "SLIDER": 0.18153846153846154,
             "CURVE": 0.0,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": -0.14461538461538462,
+            "MOVING_FASTBALL": 0.40307692307692305,
+            "SLIDER": -0.25846153846153846,
+            "CURVE": 0.0,
+            "CHANGEUP": 0.0,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.40307692307692305,
+          "totalVariationDistance": 0.4030769230769231,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.03343648995245825,
+            "MOVING_FASTBALL": 0.2040486960012135,
+            "SLIDER": -0.17390908269947553,
+            "CURVE": 0.0006560446279672153,
+            "CHANGEUP": 0.0026408320224584688,
+            "SPLITTER_FORK": 2.9442552554127433e-13
+          },
+          "maxClassCalibrationError": 0.2040486960012135,
           "perClass": {
             "FOUR_SEAM": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 88
+              "support": 47
             },
             "MOVING_FASTBALL": {
-              "precision": 0.5528455284552846,
-              "recall": 0.9392265193370166,
-              "f1": 0.6960081883316275,
-              "support": 362
+              "precision": 0.46616541353383456,
+              "recall": 0.9185185185185185,
+              "f1": 0.6184538653366584,
+              "support": 135
             },
             "SLIDER": {
-              "precision": 0.6742424242424242,
-              "recall": 0.2996632996632997,
-              "f1": 0.4149184149184149,
-              "support": 297
+              "precision": 0.6779661016949152,
+              "recall": 0.27972027972027974,
+              "f1": 0.39603960396039606,
+              "support": 143
             },
             "CURVE": {
               "precision": 0.0,
@@ -542,48 +672,67 @@
           "zeroRecallClasses": [
             "FOUR_SEAM"
           ],
-          "majorityPredictionGap": 0.33868808567603753
+          "majorityPredictionGap": 0.37846153846153846
         },
         "metrics": {
-          "n": 747,
-          "accuracy": 0.5769745649263721,
+          "n": 325,
+          "accuracy": 0.5015384615384615,
           "top3Accuracy": 1.0,
-          "macroF1": 0.1878266148463854,
-          "logLoss": 0.9262380768261316,
+          "macroF1": 0.16749585406301826,
+          "logLoss": 1.0426695097783265,
           "actualDistribution": {
-            "FOUR_SEAM": 0.11780455153949129,
-            "MOVING_FASTBALL": 0.48460508701472554,
-            "SLIDER": 0.39759036144578314,
+            "FOUR_SEAM": 0.14461538461538462,
+            "MOVING_FASTBALL": 0.4153846153846154,
+            "SLIDER": 0.44,
             "CURVE": 0.0,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
             "FOUR_SEAM": 0.0,
-            "MOVING_FASTBALL": 0.8058902275769746,
-            "SLIDER": 0.19410977242302543,
+            "MOVING_FASTBALL": 0.8215384615384616,
+            "SLIDER": 0.17846153846153845,
             "CURVE": 0.0,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": -0.14461538461538462,
+            "MOVING_FASTBALL": 0.40615384615384614,
+            "SLIDER": -0.26153846153846155,
+            "CURVE": 0.0,
+            "CHANGEUP": 0.0,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.40615384615384614,
+          "totalVariationDistance": 0.4061538461538462,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.031042273209712506,
+            "MOVING_FASTBALL": 0.20226027899067506,
+            "SLIDER": -0.17436383685176027,
+            "CURVE": 0.0006306714480029612,
+            "CHANGEUP": 0.00251515962179444,
+            "SPLITTER_FORK": 1.0001643458645543e-12
+          },
+          "maxClassCalibrationError": 0.20226027899067506,
           "perClass": {
             "FOUR_SEAM": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 88
+              "support": 47
             },
             "MOVING_FASTBALL": {
-              "precision": 0.5581395348837209,
-              "recall": 0.9281767955801105,
-              "f1": 0.6970954356846473,
-              "support": 362
+              "precision": 0.46441947565543074,
+              "recall": 0.9185185185185185,
+              "f1": 0.6169154228855721,
+              "support": 135
             },
             "SLIDER": {
-              "precision": 0.6551724137931034,
-              "recall": 0.31986531986531985,
-              "f1": 0.4298642533936652,
-              "support": 297
+              "precision": 0.6724137931034483,
+              "recall": 0.2727272727272727,
+              "f1": 0.3880597014925373,
+              "support": 143
             },
             "CURVE": {
               "precision": 0.0,
@@ -607,9 +756,9 @@
           "zeroRecallClasses": [
             "FOUR_SEAM"
           ],
-          "majorityPredictionGap": 0.32128514056224905
+          "majorityPredictionGap": 0.38153846153846155
         },
-        "score": 0.016638451960077738
+        "score": -0.0002007940749171322
       },
       "596133": {
         "name": "선수 #596133",
@@ -621,60 +770,79 @@
           "recentPitchCount": 1691,
           "repertoirePitchGroups": 4
         },
-        "support": 983,
-        "accepted": true,
+        "support": 374,
+        "accepted": false,
         "globalMetrics": {
-          "n": 983,
-          "accuracy": 0.5147507629704985,
-          "top3Accuracy": 0.9888097660223805,
-          "macroF1": 0.2240937204303771,
-          "logLoss": 1.0096847178943162,
+          "n": 374,
+          "accuracy": 0.5855614973262032,
+          "top3Accuracy": 0.9893048128342246,
+          "macroF1": 0.21356485920244309,
+          "logLoss": 0.9276596638405331,
           "actualDistribution": {
-            "FOUR_SEAM": 0.5208545269582909,
-            "MOVING_FASTBALL": 0.1698880976602238,
-            "SLIDER": 0.002034587995930824,
-            "CURVE": 0.009155645981688708,
-            "CHANGEUP": 0.2980671414038657,
+            "FOUR_SEAM": 0.5962566844919787,
+            "MOVING_FASTBALL": 0.10962566844919786,
+            "SLIDER": 0.0,
+            "CURVE": 0.0106951871657754,
+            "CHANGEUP": 0.28342245989304815,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
-            "FOUR_SEAM": 0.4842319430315361,
-            "MOVING_FASTBALL": 0.061037639877924724,
+            "FOUR_SEAM": 0.5989304812834224,
+            "MOVING_FASTBALL": 0.0106951871657754,
             "SLIDER": 0.0,
             "CURVE": 0.0,
-            "CHANGEUP": 0.4547304170905392,
+            "CHANGEUP": 0.39037433155080214,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": 0.00267379679144375,
+            "MOVING_FASTBALL": -0.09893048128342245,
+            "SLIDER": 0.0,
+            "CURVE": -0.0106951871657754,
+            "CHANGEUP": 0.106951871657754,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.106951871657754,
+          "totalVariationDistance": 0.1096256684491978,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.15385510255048368,
+            "MOVING_FASTBALL": 0.06457361266489198,
+            "SLIDER": 0.008051830654615214,
+            "CURVE": 0.013517363341074817,
+            "CHANGEUP": 0.0677122958896037,
+            "SPLITTER_FORK": 2.982475540083587e-13
+          },
+          "maxClassCalibrationError": 0.15385510255048368,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.6008403361344538,
-              "recall": 0.55859375,
-              "f1": 0.5789473684210527,
-              "support": 512
+              "precision": 0.6830357142857143,
+              "recall": 0.6860986547085202,
+              "f1": 0.6845637583892618,
+              "support": 223
             },
             "MOVING_FASTBALL": {
-              "precision": 0.4666666666666667,
-              "recall": 0.16766467065868262,
-              "f1": 0.24669603524229075,
-              "support": 167
+              "precision": 0.5,
+              "recall": 0.04878048780487805,
+              "f1": 0.08888888888888889,
+              "support": 41
             },
             "SLIDER": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 2
+              "support": 0
             },
             "CURVE": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 9
+              "support": 4
             },
             "CHANGEUP": {
-              "precision": 0.42953020134228187,
-              "recall": 0.6552901023890785,
-              "f1": 0.518918918918919,
-              "support": 293
+              "precision": 0.4383561643835616,
+              "recall": 0.6037735849056604,
+              "f1": 0.5079365079365079,
+              "support": 106
             },
             "SPLITTER_FORK": {
               "precision": 0.0,
@@ -684,63 +852,81 @@
             }
           },
           "zeroRecallClasses": [
-            "SLIDER",
             "CURVE"
           ],
-          "majorityPredictionGap": 0.0
+          "majorityPredictionGap": 0.00267379679144375
         },
         "metrics": {
-          "n": 983,
-          "accuracy": 0.5310274669379451,
-          "top3Accuracy": 0.9888097660223805,
-          "macroF1": 0.23056199787170953,
-          "logLoss": 0.9996631321607689,
+          "n": 374,
+          "accuracy": 0.5989304812834224,
+          "top3Accuracy": 0.9893048128342246,
+          "macroF1": 0.21520739154572133,
+          "logLoss": 0.9245592886213041,
           "actualDistribution": {
-            "FOUR_SEAM": 0.5208545269582909,
-            "MOVING_FASTBALL": 0.1698880976602238,
-            "SLIDER": 0.002034587995930824,
-            "CURVE": 0.009155645981688708,
-            "CHANGEUP": 0.2980671414038657,
+            "FOUR_SEAM": 0.5962566844919787,
+            "MOVING_FASTBALL": 0.10962566844919786,
+            "SLIDER": 0.0,
+            "CURVE": 0.0106951871657754,
+            "CHANGEUP": 0.28342245989304815,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
-            "FOUR_SEAM": 0.6093591047812817,
-            "MOVING_FASTBALL": 0.08138351983723296,
+            "FOUR_SEAM": 0.6524064171122995,
+            "MOVING_FASTBALL": 0.0106951871657754,
             "SLIDER": 0.0,
             "CURVE": 0.0,
-            "CHANGEUP": 0.30925737538148523,
+            "CHANGEUP": 0.33689839572192515,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": 0.05614973262032086,
+            "MOVING_FASTBALL": -0.09893048128342245,
+            "SLIDER": 0.0,
+            "CURVE": -0.0106951871657754,
+            "CHANGEUP": 0.053475935828877,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.09893048128342245,
+          "totalVariationDistance": 0.10962566844919786,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.1456024028775168,
+            "MOVING_FASTBALL": 0.07142169084350736,
+            "SLIDER": 0.008582781572515005,
+            "CURVE": 0.013651015765892381,
+            "CHANGEUP": 0.051946914694594615,
+            "SPLITTER_FORK": 1.007401012706965e-12
+          },
+          "maxClassCalibrationError": 0.1456024028775168,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.5776293823038398,
-              "recall": 0.67578125,
-              "f1": 0.6228622862286228,
-              "support": 512
+              "precision": 0.6721311475409836,
+              "recall": 0.7354260089686099,
+              "f1": 0.702355460385439,
+              "support": 223
             },
             "MOVING_FASTBALL": {
-              "precision": 0.45,
-              "recall": 0.2155688622754491,
-              "f1": 0.291497975708502,
-              "support": 167
+              "precision": 0.5,
+              "recall": 0.04878048780487805,
+              "f1": 0.08888888888888889,
+              "support": 41
             },
             "SLIDER": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 2
+              "support": 0
             },
             "CURVE": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 9
+              "support": 4
             },
             "CHANGEUP": {
-              "precision": 0.4605263157894737,
-              "recall": 0.4778156996587031,
-              "f1": 0.46901172529313234,
-              "support": 293
+              "precision": 0.4603174603174603,
+              "recall": 0.5471698113207547,
+              "f1": 0.5,
+              "support": 106
             },
             "SPLITTER_FORK": {
               "precision": 0.0,
@@ -750,12 +936,11 @@
             }
           },
           "zeroRecallClasses": [
-            "SLIDER",
             "CURVE"
           ],
-          "majorityPredictionGap": 0.08850457782299082
+          "majorityPredictionGap": 0.05614973262032086
         },
-        "score": 0.010021585733547389
+        "score": 0.0031003752192290124
       },
       "605280": {
         "name": "선수 #605280",
@@ -767,30 +952,49 @@
           "recentPitchCount": 1291,
           "repertoirePitchGroups": 3
         },
-        "support": 815,
-        "accepted": true,
+        "support": 278,
+        "accepted": false,
         "globalMetrics": {
-          "n": 815,
-          "accuracy": 0.5766871165644172,
-          "top3Accuracy": 0.9987730061349693,
-          "macroF1": 0.14235209235209234,
-          "logLoss": 0.8014540365760267,
+          "n": 278,
+          "accuracy": 0.6762589928057554,
+          "top3Accuracy": 0.9964028776978417,
+          "macroF1": 0.15497463305061773,
+          "logLoss": 0.734921499969381,
           "actualDistribution": {
-            "FOUR_SEAM": 0.0098159509202454,
-            "MOVING_FASTBALL": 0.5521472392638037,
-            "SLIDER": 0.43803680981595094,
+            "FOUR_SEAM": 0.02877697841726619,
+            "MOVING_FASTBALL": 0.6762589928057554,
+            "SLIDER": 0.2949640287769784,
             "CURVE": 0.0,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
             "FOUR_SEAM": 0.0,
-            "MOVING_FASTBALL": 0.9595092024539877,
-            "SLIDER": 0.04049079754601227,
+            "MOVING_FASTBALL": 0.9532374100719424,
+            "SLIDER": 0.046762589928057555,
             "CURVE": 0.0,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": -0.02877697841726619,
+            "MOVING_FASTBALL": 0.276978417266187,
+            "SLIDER": -0.24820143884892087,
+            "CURVE": 0.0,
+            "CHANGEUP": 0.0,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.276978417266187,
+          "totalVariationDistance": 0.276978417266187,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.015156107969396542,
+            "MOVING_FASTBALL": 0.09254239245379325,
+            "SLIDER": -0.08899973495380803,
+            "CURVE": 0.006857141242897126,
+            "CHANGEUP": 0.004756309226223184,
+            "SPLITTER_FORK": 2.9161600212594817e-13
+          },
+          "maxClassCalibrationError": 0.09254239245379325,
           "perClass": {
             "FOUR_SEAM": {
               "precision": 0.0,
@@ -799,16 +1003,16 @@
               "support": 8
             },
             "MOVING_FASTBALL": {
-              "precision": 0.5677749360613811,
-              "recall": 0.9866666666666667,
-              "f1": 0.7207792207792207,
-              "support": 450
+              "precision": 0.6867924528301886,
+              "recall": 0.9680851063829787,
+              "f1": 0.8035320088300221,
+              "support": 188
             },
             "SLIDER": {
-              "precision": 0.7878787878787878,
-              "recall": 0.07282913165266107,
-              "f1": 0.13333333333333333,
-              "support": 357
+              "precision": 0.46153846153846156,
+              "recall": 0.07317073170731707,
+              "f1": 0.12631578947368421,
+              "support": 82
             },
             "CURVE": {
               "precision": 0.0,
@@ -832,30 +1036,49 @@
           "zeroRecallClasses": [
             "FOUR_SEAM"
           ],
-          "majorityPredictionGap": 0.40736196319018403
+          "majorityPredictionGap": 0.276978417266187
         },
         "metrics": {
-          "n": 815,
-          "accuracy": 0.5914110429447853,
-          "top3Accuracy": 0.9987730061349693,
-          "macroF1": 0.15572628313140227,
-          "logLoss": 0.7595488860425595,
+          "n": 278,
+          "accuracy": 0.6798561151079137,
+          "top3Accuracy": 0.9964028776978417,
+          "macroF1": 0.16128495842781557,
+          "logLoss": 0.7255841670340014,
           "actualDistribution": {
-            "FOUR_SEAM": 0.0098159509202454,
-            "MOVING_FASTBALL": 0.5521472392638037,
-            "SLIDER": 0.43803680981595094,
+            "FOUR_SEAM": 0.02877697841726619,
+            "MOVING_FASTBALL": 0.6762589928057554,
+            "SLIDER": 0.2949640287769784,
             "CURVE": 0.0,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
             "FOUR_SEAM": 0.0,
-            "MOVING_FASTBALL": 0.9325153374233128,
-            "SLIDER": 0.06748466257668712,
+            "MOVING_FASTBALL": 0.9424460431654677,
+            "SLIDER": 0.05755395683453238,
             "CURVE": 0.0,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": -0.02877697841726619,
+            "MOVING_FASTBALL": 0.26618705035971224,
+            "SLIDER": -0.23741007194244604,
+            "CURVE": 0.0,
+            "CHANGEUP": 0.0,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.26618705035971224,
+          "totalVariationDistance": 0.26618705035971224,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.015602218316641084,
+            "MOVING_FASTBALL": 0.08192144656294853,
+            "SLIDER": -0.07711099472737401,
+            "CURVE": 0.006395662777953726,
+            "CHANGEUP": 0.004396103702122438,
+            "SPLITTER_FORK": 9.905808615347001e-13
+          },
+          "maxClassCalibrationError": 0.08192144656294853,
           "perClass": {
             "FOUR_SEAM": {
               "precision": 0.0,
@@ -864,16 +1087,16 @@
               "support": 8
             },
             "MOVING_FASTBALL": {
-              "precision": 0.5776315789473684,
-              "recall": 0.9755555555555555,
-              "f1": 0.7256198347107438,
-              "support": 450
+              "precision": 0.6908396946564885,
+              "recall": 0.9627659574468085,
+              "f1": 0.8044444444444444,
+              "support": 188
             },
             "SLIDER": {
-              "precision": 0.7818181818181819,
-              "recall": 0.12044817927170869,
-              "f1": 0.2087378640776699,
-              "support": 357
+              "precision": 0.5,
+              "recall": 0.0975609756097561,
+              "f1": 0.16326530612244897,
+              "support": 82
             },
             "CURVE": {
               "precision": 0.0,
@@ -897,9 +1120,9 @@
           "zeroRecallClasses": [
             "FOUR_SEAM"
           ],
-          "majorityPredictionGap": 0.3803680981595091
+          "majorityPredictionGap": 0.26618705035971224
         },
-        "score": 0.041905150533467106
+        "score": 0.009337332935379639
       },
       "641482": {
         "name": "Nestor Cortes",
@@ -911,48 +1134,67 @@
           "recentPitchCount": 3013,
           "repertoirePitchGroups": 4
         },
-        "support": 1737,
-        "accepted": true,
+        "support": 317,
+        "accepted": false,
         "globalMetrics": {
-          "n": 1737,
-          "accuracy": 0.3765112262521589,
-          "top3Accuracy": 0.918825561312608,
-          "macroF1": 0.16459699354392757,
-          "logLoss": 1.2294736611364911,
+          "n": 317,
+          "accuracy": 0.38801261829652994,
+          "top3Accuracy": 0.9369085173501577,
+          "macroF1": 0.18180872900124234,
+          "logLoss": 1.2007585347484087,
           "actualDistribution": {
-            "FOUR_SEAM": 0.4208405296488198,
-            "MOVING_FASTBALL": 0.2757628094415659,
-            "SLIDER": 0.18998272884283246,
+            "FOUR_SEAM": 0.4227129337539432,
+            "MOVING_FASTBALL": 0.23659305993690852,
+            "SLIDER": 0.14826498422712933,
             "CURVE": 0.0,
-            "CHANGEUP": 0.11341393206678181,
+            "CHANGEUP": 0.19242902208201892,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
-            "FOUR_SEAM": 0.25676453655728265,
-            "MOVING_FASTBALL": 0.7029360967184801,
-            "SLIDER": 0.033966609096142776,
+            "FOUR_SEAM": 0.34069400630914826,
+            "MOVING_FASTBALL": 0.5962145110410094,
+            "SLIDER": 0.04100946372239748,
             "CURVE": 0.0,
-            "CHANGEUP": 0.0063327576280944155,
+            "CHANGEUP": 0.022082018927444796,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": -0.08201892744479494,
+            "MOVING_FASTBALL": 0.35962145110410093,
+            "SLIDER": -0.10725552050473186,
+            "CURVE": 0.0,
+            "CHANGEUP": -0.17034700315457413,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.35962145110410093,
+          "totalVariationDistance": 0.35962145110410093,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.0968250927771368,
+            "MOVING_FASTBALL": 0.11329567814252081,
+            "SLIDER": 0.014399354538811387,
+            "CURVE": 0.0009904262941696032,
+            "CHANGEUP": -0.03186036619866514,
+            "SPLITTER_FORK": 3.001654325582589e-13
+          },
+          "maxClassCalibrationError": 0.11329567814252081,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.5358744394618834,
-              "recall": 0.32694938440492477,
-              "f1": 0.40611724723874254,
-              "support": 731
+              "precision": 0.5648148148148148,
+              "recall": 0.4552238805970149,
+              "f1": 0.5041322314049587,
+              "support": 134
             },
             "MOVING_FASTBALL": {
-              "precision": 0.32432432432432434,
-              "recall": 0.826722338204593,
-              "f1": 0.46588235294117647,
-              "support": 479
+              "precision": 0.30158730158730157,
+              "recall": 0.76,
+              "f1": 0.4318181818181818,
+              "support": 75
             },
             "SLIDER": {
-              "precision": 0.2542372881355932,
-              "recall": 0.045454545454545456,
-              "f1": 0.07712082262210797,
-              "support": 330
+              "precision": 0.15384615384615385,
+              "recall": 0.0425531914893617,
+              "f1": 0.06666666666666667,
+              "support": 47
             },
             "CURVE": {
               "precision": 0.0,
@@ -961,10 +1203,10 @@
               "support": 0
             },
             "CHANGEUP": {
-              "precision": 0.36363636363636365,
-              "recall": 0.02030456852791878,
-              "f1": 0.038461538461538464,
-              "support": 197
+              "precision": 0.42857142857142855,
+              "recall": 0.04918032786885246,
+              "f1": 0.08823529411764706,
+              "support": 61
             },
             "SPLITTER_FORK": {
               "precision": 0.0,
@@ -974,48 +1216,67 @@
             }
           },
           "zeroRecallClasses": [],
-          "majorityPredictionGap": 0.2820955670696603
+          "majorityPredictionGap": 0.17350157728706622
         },
         "metrics": {
-          "n": 1737,
-          "accuracy": 0.4231433506044905,
-          "top3Accuracy": 0.9234312032239493,
-          "macroF1": 0.18690059366446188,
-          "logLoss": 1.2047816412422916,
+          "n": 317,
+          "accuracy": 0.42902208201892744,
+          "top3Accuracy": 0.9369085173501577,
+          "macroF1": 0.2044909585624398,
+          "logLoss": 1.191476456726288,
           "actualDistribution": {
-            "FOUR_SEAM": 0.4208405296488198,
-            "MOVING_FASTBALL": 0.2757628094415659,
-            "SLIDER": 0.18998272884283246,
+            "FOUR_SEAM": 0.4227129337539432,
+            "MOVING_FASTBALL": 0.23659305993690852,
+            "SLIDER": 0.14826498422712933,
             "CURVE": 0.0,
-            "CHANGEUP": 0.11341393206678181,
+            "CHANGEUP": 0.19242902208201892,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
-            "FOUR_SEAM": 0.40644789867587794,
-            "MOVING_FASTBALL": 0.56188831318365,
-            "SLIDER": 0.027633851468048358,
+            "FOUR_SEAM": 0.4605678233438486,
+            "MOVING_FASTBALL": 0.4889589905362776,
+            "SLIDER": 0.03785488958990536,
             "CURVE": 0.0,
-            "CHANGEUP": 0.004029936672423719,
+            "CHANGEUP": 0.012618296529968454,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": 0.037854889589905405,
+            "MOVING_FASTBALL": 0.25236593059936907,
+            "SLIDER": -0.11041009463722397,
+            "CURVE": 0.0,
+            "CHANGEUP": -0.17981072555205047,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.25236593059936907,
+          "totalVariationDistance": 0.2902208201892744,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.06574346786694546,
+            "MOVING_FASTBALL": 0.10806477347520257,
+            "SLIDER": 0.012723496598377598,
+            "CURVE": 0.0009062728221130875,
+            "CHANGEUP": -0.055951075029754244,
+            "SPLITTER_FORK": 1.0063270288959762e-12
+          },
+          "maxClassCalibrationError": 0.10806477347520257,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.5169971671388102,
-              "recall": 0.4993160054719562,
-              "f1": 0.5080027835768963,
-              "support": 731
+              "precision": 0.5273972602739726,
+              "recall": 0.5746268656716418,
+              "f1": 0.55,
+              "support": 134
             },
             "MOVING_FASTBALL": {
-              "precision": 0.35758196721311475,
-              "recall": 0.7286012526096033,
-              "f1": 0.47972508591065294,
-              "support": 479
+              "precision": 0.33548387096774196,
+              "recall": 0.6933333333333334,
+              "f1": 0.45217391304347826,
+              "support": 75
             },
             "SLIDER": {
-              "precision": 0.3333333333333333,
-              "recall": 0.048484848484848485,
-              "f1": 0.08465608465608465,
-              "support": 330
+              "precision": 0.25,
+              "recall": 0.06382978723404255,
+              "f1": 0.1016949152542373,
+              "support": 47
             },
             "CURVE": {
               "precision": 0.0,
@@ -1024,10 +1285,10 @@
               "support": 0
             },
             "CHANGEUP": {
-              "precision": 0.7142857142857143,
-              "recall": 0.025380710659898477,
-              "f1": 0.049019607843137254,
-              "support": 197
+              "precision": 1.0,
+              "recall": 0.06557377049180328,
+              "f1": 0.12307692307692308,
+              "support": 61
             },
             "SPLITTER_FORK": {
               "precision": 0.0,
@@ -1037,9 +1298,9 @@
             }
           },
           "zeroRecallClasses": [],
-          "majorityPredictionGap": 0.14104778353483016
+          "majorityPredictionGap": 0.06624605678233442
         },
-        "score": 0.024692019894199557
+        "score": 0.009282078022120555
       },
       "656427": {
         "name": "Jack Flaherty",
@@ -1051,60 +1312,79 @@
           "recentPitchCount": 3126,
           "repertoirePitchGroups": 4
         },
-        "support": 1836,
+        "support": 829,
         "accepted": true,
         "globalMetrics": {
-          "n": 1836,
-          "accuracy": 0.42592592592592593,
-          "top3Accuracy": 0.9591503267973857,
-          "macroF1": 0.20930549787314157,
-          "logLoss": 1.1623428358699814,
+          "n": 829,
+          "accuracy": 0.4427020506634499,
+          "top3Accuracy": 0.9650180940892642,
+          "macroF1": 0.2169050476005097,
+          "logLoss": 1.138772448101133,
           "actualDistribution": {
-            "FOUR_SEAM": 0.4433551198257081,
-            "MOVING_FASTBALL": 0.024509803921568627,
-            "SLIDER": 0.2657952069716776,
-            "CURVE": 0.25,
-            "CHANGEUP": 0.016339869281045753,
+            "FOUR_SEAM": 0.4559710494571773,
+            "MOVING_FASTBALL": 0.020506634499396863,
+            "SLIDER": 0.2255729794933655,
+            "CURVE": 0.28347406513872137,
+            "CHANGEUP": 0.014475271411338963,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
-            "FOUR_SEAM": 0.4057734204793028,
+            "FOUR_SEAM": 0.4101326899879373,
             "MOVING_FASTBALL": 0.0,
-            "SLIDER": 0.36056644880174293,
-            "CURVE": 0.23366013071895425,
+            "SLIDER": 0.3208685162846803,
+            "CURVE": 0.2689987937273824,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": -0.04583835946924003,
+            "MOVING_FASTBALL": -0.020506634499396863,
+            "SLIDER": 0.09529553679131483,
+            "CURVE": -0.014475271411338975,
+            "CHANGEUP": -0.014475271411338963,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.09529553679131483,
+          "totalVariationDistance": 0.09529553679131483,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.08720065206487954,
+            "MOVING_FASTBALL": 0.01641734352373835,
+            "SLIDER": 0.07045579624785034,
+            "CURVE": -0.013307612912990596,
+            "CHANGEUP": 0.013635125205981693,
+            "SPLITTER_FORK": 2.998931177128958e-13
+          },
+          "maxClassCalibrationError": 0.08720065206487954,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.5449664429530201,
-              "recall": 0.4987714987714988,
-              "f1": 0.5208466966003849,
-              "support": 814
+              "precision": 0.5676470588235294,
+              "recall": 0.5105820105820106,
+              "f1": 0.5376044568245125,
+              "support": 378
             },
             "MOVING_FASTBALL": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 45
+              "support": 17
             },
             "SLIDER": {
-              "precision": 0.3293051359516616,
-              "recall": 0.44672131147540983,
-              "f1": 0.3791304347826087,
-              "support": 488
+              "precision": 0.31203007518796994,
+              "recall": 0.44385026737967914,
+              "f1": 0.36644591611479027,
+              "support": 187
             },
             "CURVE": {
-              "precision": 0.3682983682983683,
-              "recall": 0.3442265795206972,
-              "f1": 0.35585585585585583,
-              "support": 459
+              "precision": 0.4080717488789238,
+              "recall": 0.3872340425531915,
+              "f1": 0.39737991266375544,
+              "support": 235
             },
             "CHANGEUP": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 30
+              "support": 12
             },
             "SPLITTER_FORK": {
               "precision": 0.0,
@@ -1120,57 +1400,76 @@
           "majorityPredictionGap": 0.0
         },
         "metrics": {
-          "n": 1836,
-          "accuracy": 0.44498910675381265,
-          "top3Accuracy": 0.9586056644880174,
-          "macroF1": 0.20935634488452595,
-          "logLoss": 1.153793307593153,
+          "n": 829,
+          "accuracy": 0.44632086851628466,
+          "top3Accuracy": 0.9650180940892642,
+          "macroF1": 0.2129672237579686,
+          "logLoss": 1.133641109007933,
           "actualDistribution": {
-            "FOUR_SEAM": 0.4433551198257081,
-            "MOVING_FASTBALL": 0.024509803921568627,
-            "SLIDER": 0.2657952069716776,
-            "CURVE": 0.25,
-            "CHANGEUP": 0.016339869281045753,
+            "FOUR_SEAM": 0.4559710494571773,
+            "MOVING_FASTBALL": 0.020506634499396863,
+            "SLIDER": 0.2255729794933655,
+            "CURVE": 0.28347406513872137,
+            "CHANGEUP": 0.014475271411338963,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
-            "FOUR_SEAM": 0.5179738562091504,
+            "FOUR_SEAM": 0.4837153196622437,
             "MOVING_FASTBALL": 0.0,
-            "SLIDER": 0.2995642701525055,
-            "CURVE": 0.18191721132897604,
-            "CHANGEUP": 0.0005446623093681918,
+            "SLIDER": 0.28347406513872137,
+            "CURVE": 0.2316043425814234,
+            "CHANGEUP": 0.0012062726176115801,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": 0.027744270205066368,
+            "MOVING_FASTBALL": -0.020506634499396863,
+            "SLIDER": 0.05790108564535587,
+            "CURVE": -0.051869722557297965,
+            "CHANGEUP": -0.013268998793727383,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.05790108564535587,
+          "totalVariationDistance": 0.08564535585042224,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.07589335632367034,
+            "MOVING_FASTBALL": 0.0160632803669389,
+            "SLIDER": 0.06778496403100773,
+            "CURVE": -0.021995839144822393,
+            "CHANGEUP": 0.014040951069543043,
+            "SPLITTER_FORK": 1.0033741514225687e-12
+          },
+          "maxClassCalibrationError": 0.07589335632367034,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.5215562565720294,
-              "recall": 0.6093366093366094,
-              "f1": 0.5620396600566572,
-              "support": 814
+              "precision": 0.5411471321695761,
+              "recall": 0.5740740740740741,
+              "f1": 0.5571245186136072,
+              "support": 378
             },
             "MOVING_FASTBALL": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 45
+              "support": 17
             },
             "SLIDER": {
-              "precision": 0.3527272727272727,
-              "recall": 0.3975409836065574,
-              "f1": 0.3737957610789981,
-              "support": 488
+              "precision": 0.31063829787234043,
+              "recall": 0.39037433155080214,
+              "f1": 0.3459715639810427,
+              "support": 187
             },
             "CURVE": {
-              "precision": 0.38023952095808383,
-              "recall": 0.2766884531590414,
-              "f1": 0.3203026481715006,
-              "support": 459
+              "precision": 0.4166666666666667,
+              "recall": 0.3404255319148936,
+              "f1": 0.3747072599531616,
+              "support": 235
             },
             "CHANGEUP": {
               "precision": 0.0,
               "recall": 0.0,
               "f1": 0.0,
-              "support": 30
+              "support": 12
             },
             "SPLITTER_FORK": {
               "precision": 0.0,
@@ -1183,9 +1482,9 @@
             "MOVING_FASTBALL",
             "CHANGEUP"
           ],
-          "majorityPredictionGap": 0.0746187363834423
+          "majorityPredictionGap": 0.027744270205066368
         },
-        "score": 0.008549528276828422
+        "score": 0.00513133909319996
       },
       "656629": {
         "name": "선수 #656629",
@@ -1197,48 +1496,67 @@
           "recentPitchCount": 1248,
           "repertoirePitchGroups": 3
         },
-        "support": 807,
-        "accepted": true,
+        "support": 302,
+        "accepted": false,
         "globalMetrics": {
-          "n": 807,
-          "accuracy": 0.7125154894671624,
-          "top3Accuracy": 0.9987608426270136,
-          "macroF1": 0.18630226622523205,
-          "logLoss": 0.7865018392986735,
+          "n": 302,
+          "accuracy": 0.6788079470198676,
+          "top3Accuracy": 0.9966887417218543,
+          "macroF1": 0.19232963305581252,
+          "logLoss": 0.7801012560374081,
           "actualDistribution": {
-            "FOUR_SEAM": 0.7769516728624535,
-            "MOVING_FASTBALL": 0.11771995043370508,
-            "SLIDER": 0.10532837670384139,
+            "FOUR_SEAM": 0.7549668874172185,
+            "MOVING_FASTBALL": 0.11920529801324503,
+            "SLIDER": 0.12582781456953643,
             "CURVE": 0.0,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
-            "FOUR_SEAM": 0.8364312267657993,
-            "MOVING_FASTBALL": 0.01982651796778191,
-            "SLIDER": 0.14374225526641884,
+            "FOUR_SEAM": 0.8013245033112583,
+            "MOVING_FASTBALL": 0.033112582781456956,
+            "SLIDER": 0.16556291390728478,
             "CURVE": 0.0,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": 0.04635761589403975,
+            "MOVING_FASTBALL": -0.08609271523178808,
+            "SLIDER": 0.03973509933774835,
+            "CURVE": 0.0,
+            "CHANGEUP": 0.0,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.08609271523178808,
+          "totalVariationDistance": 0.08609271523178809,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.20026388495044722,
+            "MOVING_FASTBALL": 0.01488667815300923,
+            "SLIDER": 0.14693791781418272,
+            "CURVE": 0.01147056205887625,
+            "CHANGEUP": 0.026968726924082503,
+            "SPLITTER_FORK": 2.967419838114782e-13
+          },
+          "maxClassCalibrationError": 0.20026388495044722,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.8148148148148148,
-              "recall": 0.8771929824561403,
-              "f1": 0.8448540706605223,
-              "support": 627
+              "precision": 0.7933884297520661,
+              "recall": 0.8421052631578947,
+              "f1": 0.8170212765957446,
+              "support": 228
             },
             "MOVING_FASTBALL": {
-              "precision": 0.1875,
-              "recall": 0.031578947368421054,
-              "f1": 0.05405405405405406,
-              "support": 95
+              "precision": 0.2,
+              "recall": 0.05555555555555555,
+              "f1": 0.08695652173913043,
+              "support": 36
             },
             "SLIDER": {
-              "precision": 0.1896551724137931,
-              "recall": 0.25882352941176473,
-              "f1": 0.21890547263681592,
-              "support": 85
+              "precision": 0.22,
+              "recall": 0.2894736842105263,
+              "f1": 0.25,
+              "support": 38
             },
             "CURVE": {
               "precision": 0.0,
@@ -1260,48 +1578,67 @@
             }
           },
           "zeroRecallClasses": [],
-          "majorityPredictionGap": 0.059479553903345805
+          "majorityPredictionGap": 0.04635761589403975
         },
         "metrics": {
-          "n": 807,
-          "accuracy": 0.7360594795539034,
-          "top3Accuracy": 0.9987608426270136,
-          "macroF1": 0.18813030433208966,
-          "logLoss": 0.7641500798830302,
+          "n": 302,
+          "accuracy": 0.695364238410596,
+          "top3Accuracy": 0.9966887417218543,
+          "macroF1": 0.19694670371495318,
+          "logLoss": 0.7707171925859196,
           "actualDistribution": {
-            "FOUR_SEAM": 0.7769516728624535,
-            "MOVING_FASTBALL": 0.11771995043370508,
-            "SLIDER": 0.10532837670384139,
+            "FOUR_SEAM": 0.7549668874172185,
+            "MOVING_FASTBALL": 0.11920529801324503,
+            "SLIDER": 0.12582781456953643,
             "CURVE": 0.0,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
           "predictedDistribution": {
-            "FOUR_SEAM": 0.8897149938042132,
-            "MOVING_FASTBALL": 0.021065675340768277,
-            "SLIDER": 0.08921933085501858,
+            "FOUR_SEAM": 0.8211920529801324,
+            "MOVING_FASTBALL": 0.029801324503311258,
+            "SLIDER": 0.1490066225165563,
             "CURVE": 0.0,
             "CHANGEUP": 0.0,
             "SPLITTER_FORK": 0.0
           },
+          "classShareError": {
+            "FOUR_SEAM": 0.06622516556291391,
+            "MOVING_FASTBALL": -0.08940397350993377,
+            "SLIDER": 0.023178807947019875,
+            "CURVE": 0.0,
+            "CHANGEUP": 0.0,
+            "SPLITTER_FORK": 0.0
+          },
+          "maxClassShareError": 0.08940397350993377,
+          "totalVariationDistance": 0.08940397350993379,
+          "classCalibrationError": {
+            "FOUR_SEAM": -0.1912446019159938,
+            "MOVING_FASTBALL": 0.014750337587118273,
+            "SLIDER": 0.13798174752605638,
+            "CURVE": 0.010206119936617505,
+            "CHANGEUP": 0.02830639686521336,
+            "SPLITTER_FORK": 9.883517086916757e-13
+          },
+          "maxClassCalibrationError": 0.1912446019159938,
           "perClass": {
             "FOUR_SEAM": {
-              "precision": 0.7994428969359332,
-              "recall": 0.9154704944178629,
-              "f1": 0.8535315985130112,
-              "support": 627
+              "precision": 0.7943548387096774,
+              "recall": 0.8640350877192983,
+              "f1": 0.8277310924369747,
+              "support": 228
             },
             "MOVING_FASTBALL": {
-              "precision": 0.23529411764705882,
-              "recall": 0.042105263157894736,
-              "f1": 0.07142857142857142,
-              "support": 95
+              "precision": 0.2222222222222222,
+              "recall": 0.05555555555555555,
+              "f1": 0.08888888888888889,
+              "support": 36
             },
             "SLIDER": {
-              "precision": 0.2222222222222222,
-              "recall": 0.18823529411764706,
-              "f1": 0.20382165605095542,
-              "support": 85
+              "precision": 0.24444444444444444,
+              "recall": 0.2894736842105263,
+              "f1": 0.26506024096385544,
+              "support": 38
             },
             "CURVE": {
               "precision": 0.0,
@@ -1323,71 +1660,104 @@
             }
           },
           "zeroRecallClasses": [],
-          "majorityPredictionGap": 0.11276332094175967
+          "majorityPredictionGap": 0.06622516556291391
         },
-        "score": 0.02235175941564327
+        "score": 0.009384063451488456
       }
     },
     "specialists": {
       "477132": {
         "pitcherId": 477132,
         "name": "선수 #477132",
-        "enabled": true,
-        "model": "pooled-contextual-residual",
+        "enabled": false,
+        "model": "",
         "dataCutoff": "2024-08-30",
-        "globalWeight": 0.75,
-        "specialistWeight": 0.25,
+        "globalWeight": 1,
+        "specialistWeight": 0,
         "temperature": 1.0,
-        "spec": "pooled-contextual-residual",
+        "spec": null,
         "logitBias": null,
         "personalizerStrength": null,
-        "status": "active",
-        "residualScale": 0.25,
+        "status": "shadow",
+        "residualScale": null,
+        "reliability": 0.1671363925055573,
+        "reliabilityComponents": {
+          "n": 504,
+          "supportCoefficient": 0.3351063829787234,
+          "pAll": 0.9975124378109452,
+          "pRecent": 0.9975124378109452,
+          "reliability": 0.1671363925055573,
+          "recentSupport": 504,
+          "allMeanGain": 0.0168538222178006,
+          "recentMeanGain": 0.0168538222178006
+        },
         "selectionRank": null,
         "support": {
-          "pregameValidation": 504
+          "pregameValidation": 27
         },
-        "reason": null
+        "reason": "validation_failed"
       },
       "543037": {
         "pitcherId": 543037,
         "name": "Gerrit Cole",
-        "enabled": true,
-        "model": "pooled-contextual-residual",
+        "enabled": false,
+        "model": "",
         "dataCutoff": "2024-10-15",
-        "globalWeight": 0.75,
-        "specialistWeight": 0.25,
+        "globalWeight": 1,
+        "specialistWeight": 0,
         "temperature": 1.0,
-        "spec": "pooled-contextual-residual",
+        "spec": null,
         "logitBias": null,
         "personalizerStrength": null,
-        "status": "active",
-        "residualScale": 0.25,
+        "status": "shadow",
+        "residualScale": null,
+        "reliability": 0.31999054904688023,
+        "reliabilityComponents": {
+          "n": 1790,
+          "supportCoefficient": 0.6415770609318996,
+          "pAll": 0.9975124378109452,
+          "pRecent": 0.9975124378109452,
+          "reliability": 0.31999054904688023,
+          "recentSupport": 1370,
+          "allMeanGain": 0.05756256224384635,
+          "recentMeanGain": 0.04625760030236633
+        },
         "selectionRank": null,
         "support": {
-          "pregameValidation": 1790
+          "pregameValidation": 796
         },
-        "reason": null
+        "reason": "validation_failed"
       },
       "592454": {
         "pitcherId": 592454,
         "name": "Tommy Kahnle",
-        "enabled": true,
-        "model": "pooled-contextual-residual",
+        "enabled": false,
+        "model": "",
         "dataCutoff": "2024-10-18",
-        "globalWeight": 0.75,
-        "specialistWeight": 0.25,
+        "globalWeight": 1,
+        "specialistWeight": 0,
         "temperature": 1.0,
-        "spec": "pooled-contextual-residual",
+        "spec": null,
         "logitBias": null,
         "personalizerStrength": null,
-        "status": "active",
-        "residualScale": 0.25,
+        "status": "shadow",
+        "residualScale": null,
+        "reliability": 0.23031546447825182,
+        "reliabilityComponents": {
+          "n": 866,
+          "supportCoefficient": 0.4640943193997856,
+          "pAll": 0.9975124378109452,
+          "pRecent": 0.9925373134328358,
+          "reliability": 0.23031546447825182,
+          "recentSupport": 521,
+          "allMeanGain": 0.0171680834226553,
+          "recentMeanGain": 0.026701136375880733
+        },
         "selectionRank": null,
         "support": {
-          "pregameValidation": 834
+          "pregameValidation": 272
         },
-        "reason": null
+        "reason": "validation_failed"
       },
       "595014": {
         "pitcherId": 595014,
@@ -1401,73 +1771,117 @@
         "spec": null,
         "logitBias": null,
         "personalizerStrength": null,
-        "status": "inactive",
+        "status": "shadow",
         "residualScale": null,
+        "reliability": 0.07095554399583849,
+        "reliabilityComponents": {
+          "n": 865,
+          "supportCoefficient": 0.46380697050938335,
+          "pAll": 0.7885572139303483,
+          "pRecent": 0.30597014925373134,
+          "reliability": 0.07095554399583849,
+          "recentSupport": 449,
+          "allMeanGain": 0.001676100717803564,
+          "recentMeanGain": -0.0019784578578471556
+        },
         "selectionRank": null,
         "support": {
-          "pregameValidation": 747
+          "pregameValidation": 325
         },
         "reason": "validation_failed"
       },
       "596133": {
         "pitcherId": 596133,
         "name": "선수 #596133",
-        "enabled": true,
-        "model": "pooled-contextual-residual",
+        "enabled": false,
+        "model": "",
         "dataCutoff": "2024-10-19",
-        "globalWeight": 0.75,
-        "specialistWeight": 0.25,
+        "globalWeight": 1,
+        "specialistWeight": 0,
         "temperature": 1.0,
-        "spec": "pooled-contextual-residual",
+        "spec": null,
         "logitBias": null,
         "personalizerStrength": null,
-        "status": "active",
-        "residualScale": 0.25,
+        "status": "shadow",
+        "residualScale": null,
+        "reliability": 0.047745964057264695,
+        "reliabilityComponents": {
+          "n": 1254,
+          "supportCoefficient": 0.5563442768411713,
+          "pAll": 0.6890547263681592,
+          "pRecent": 0.17164179104477612,
+          "reliability": 0.047745964057264695,
+          "recentSupport": 650,
+          "allMeanGain": 0.003595957913644116,
+          "recentMeanGain": -0.009917927616732027
+        },
         "selectionRank": null,
         "support": {
-          "pregameValidation": 983
+          "pregameValidation": 374
         },
-        "reason": null
+        "reason": "validation_failed"
       },
       "605280": {
         "pitcherId": 605280,
         "name": "선수 #605280",
-        "enabled": true,
-        "model": "pooled-contextual-residual",
+        "enabled": false,
+        "model": "",
         "dataCutoff": "2024-10-18",
-        "globalWeight": 0.75,
-        "specialistWeight": 0.25,
+        "globalWeight": 1,
+        "specialistWeight": 0,
         "temperature": 1.0,
-        "spec": "pooled-contextual-residual",
+        "spec": null,
         "logitBias": null,
         "personalizerStrength": null,
-        "status": "active",
-        "residualScale": 0.25,
+        "status": "shadow",
+        "residualScale": null,
+        "reliability": 0.25098859898223735,
+        "reliabilityComponents": {
+          "n": 1013,
+          "supportCoefficient": 0.5032290114257327,
+          "pAll": 0.9975124378109452,
+          "pRecent": 0.9975124378109452,
+          "reliability": 0.25098859898223735,
+          "recentSupport": 521,
+          "allMeanGain": 0.07350944644132397,
+          "recentMeanGain": 0.07016761613905725
+        },
         "selectionRank": null,
         "support": {
-          "pregameValidation": 815
+          "pregameValidation": 278
         },
-        "reason": null
+        "reason": "validation_failed"
       },
       "641482": {
         "pitcherId": 641482,
         "name": "Nestor Cortes",
-        "enabled": true,
-        "model": "pooled-contextual-residual",
+        "enabled": false,
+        "model": "",
         "dataCutoff": "2024-09-18",
-        "globalWeight": 0.75,
-        "specialistWeight": 0.25,
+        "globalWeight": 1,
+        "specialistWeight": 0,
         "temperature": 1.0,
-        "spec": "pooled-contextual-residual",
+        "spec": null,
         "logitBias": null,
         "personalizerStrength": null,
-        "status": "active",
-        "residualScale": 0.25,
+        "status": "shadow",
+        "residualScale": null,
+        "reliability": 0.34729669297001176,
+        "reliabilityComponents": {
+          "n": 2293,
+          "supportCoefficient": 0.6963255390221682,
+          "pAll": 0.9975124378109452,
+          "pRecent": 0.9975124378109452,
+          "reliability": 0.34729669297001176,
+          "recentSupport": 1366,
+          "allMeanGain": 0.04420869457856536,
+          "recentMeanGain": 0.035446281873157306
+        },
         "selectionRank": null,
         "support": {
-          "pregameValidation": 1737
+          "pregameValidation": 317
         },
-        "reason": null
+        "reason": "validation_failed"
       },
       "656427": {
         "pitcherId": 656427,
@@ -1475,39 +1889,61 @@
         "enabled": true,
         "model": "pooled-contextual-residual",
         "dataCutoff": "2024-10-18",
-        "globalWeight": 0.75,
-        "specialistWeight": 0.25,
+        "globalWeight": 1,
+        "specialistWeight": 0,
         "temperature": 1.0,
-        "spec": "pooled-contextual-residual",
+        "spec": "v6-reliability-gated-residual",
         "logitBias": null,
         "personalizerStrength": null,
         "status": "active",
-        "residualScale": 0.25,
+        "residualScale": null,
+        "reliability": 0.3484376597797429,
+        "reliabilityComponents": {
+          "n": 2357,
+          "supportCoefficient": 0.7021149836163241,
+          "pAll": 0.9975124378109452,
+          "pRecent": 0.9925373134328358,
+          "reliability": 0.3484376597797429,
+          "recentSupport": 1326,
+          "allMeanGain": 0.014358107300491722,
+          "recentMeanGain": 0.00905656940488004
+        },
         "selectionRank": null,
         "support": {
-          "pregameValidation": 1836
+          "pregameValidation": 829
         },
         "reason": null
       },
       "656629": {
         "pitcherId": 656629,
         "name": "선수 #656629",
-        "enabled": true,
-        "model": "pooled-contextual-residual",
+        "enabled": false,
+        "model": "",
         "dataCutoff": "2024-10-20",
-        "globalWeight": 0.75,
-        "specialistWeight": 0.25,
+        "globalWeight": 1,
+        "specialistWeight": 0,
         "temperature": 1.0,
-        "spec": "pooled-contextual-residual",
+        "spec": null,
         "logitBias": null,
         "personalizerStrength": null,
-        "status": "active",
-        "residualScale": 0.25,
+        "status": "shadow",
+        "residualScale": null,
+        "reliability": 0.2533053237748266,
+        "reliabilityComponents": {
+          "n": 1032,
+          "supportCoefficient": 0.5078740157480315,
+          "pAll": 0.9975124378109452,
+          "pRecent": 0.9975124378109452,
+          "reliability": 0.2533053237748266,
+          "recentSupport": 497,
+          "allMeanGain": 0.03532717073581492,
+          "recentMeanGain": 0.027143671350437906
+        },
         "selectionRank": null,
         "support": {
-          "pregameValidation": 807
+          "pregameValidation": 302
         },
-        "reason": null
+        "reason": "validation_failed"
       }
     }
   },

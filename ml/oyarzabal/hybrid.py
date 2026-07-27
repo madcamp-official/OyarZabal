@@ -10,7 +10,13 @@ import numpy as np
 import pandas as pd
 
 from .metrics import evaluate_diagnostics, validate_probability_matrix
-from .residual import apply_correction, provisional_scale
+from .residual import (
+    apply_correction,
+    apply_dynamic_correction,
+    effective_residual_scale,
+    hard_safety_mask,
+    provisional_scale,
+)
 from .taxonomy import PITCH_GROUPS
 
 
@@ -28,6 +34,8 @@ class RegistryEntry:
     personalizer_strength: float | None = None
     status: str = "inactive"
     residual_scale: float | None = None
+    reliability: float | None = None
+    reliability_components: Mapping[str, float | int] | None = None
     selection_rank: int | None = None
     support: Mapping[str, int] | None = None
 
@@ -53,6 +61,12 @@ def serialize_registry_entry(
         "personalizerStrength": entry.personalizer_strength,
         "status": entry.status,
         "residualScale": entry.residual_scale,
+        "reliability": entry.reliability,
+        "reliabilityComponents": (
+            dict(entry.reliability_components)
+            if entry.reliability_components is not None
+            else None
+        ),
         "selectionRank": entry.selection_rank,
         "support": dict(entry.support) if entry.support is not None else None,
         "reason": entry.reason,
@@ -393,3 +407,88 @@ def apply_pooled_residual_by_pitcher(
         for position in positions:
             sources[int(position)] = "pooled-residual"
     return output, sources
+
+
+def apply_reliability_gated_residual(
+    rows: pd.DataFrame,
+    global_probabilities: np.ndarray,
+    correction: np.ndarray,
+    context_gate: np.ndarray,
+    registry: Mapping[int, RegistryEntry],
+    *,
+    prediction_dates: Sequence[date] | None = None,
+) -> tuple[np.ndarray, list[str], list[dict[str, object]]]:
+    global_values = validate_probability_matrix(global_probabilities)
+    residual_values = np.asarray(correction, dtype=float)
+    gate_values = np.asarray(context_gate, dtype=float)
+    ids = rows["pitcher_id"].to_numpy(dtype=int)
+    if (
+        len(rows) != len(global_values)
+        or residual_values.shape != global_values.shape
+        or gate_values.shape != (len(rows),)
+    ):
+        raise ValueError("reliability-gated residual inputs are misaligned")
+    if prediction_dates is not None and len(prediction_dates) != len(rows):
+        raise ValueError("prediction dates and rows differ in length")
+
+    safety, safety_reasons = hard_safety_mask(rows)
+    requested = np.zeros(len(rows), dtype=float)
+    base_reliability = np.zeros(len(rows), dtype=float)
+    sources = ["global"] * len(rows)
+    hard_reasons: list[str | None] = ["registry_inactive"] * len(rows)
+    for pitcher_id, entry in registry.items():
+        positions = np.flatnonzero(ids == pitcher_id)
+        if not entry.enabled or not len(positions):
+            continue
+        if entry.reliability is None:
+            raise ValueError(f"missing reliability for {pitcher_id}")
+        for position in positions:
+            reliability = float(entry.reliability)
+            if entry.status == "provisional":
+                if prediction_dates is None or entry.data_cutoff is None:
+                    raise ValueError(
+                        f"missing provisional date context for {pitcher_id}"
+                    )
+                cutoff = date.fromisoformat(entry.data_cutoff)
+                gap = max(0, (prediction_dates[int(position)] - cutoff).days)
+                reliability = provisional_scale(
+                    gap,
+                    base_reliability=reliability,
+                )
+            base_reliability[int(position)] = reliability
+            hard_reasons[int(position)] = safety_reasons[int(position)]
+            requested[int(position)] = effective_residual_scale(
+                reliability,
+                float(gate_values[int(position)]),
+                hard_safety_pass=bool(safety[int(position)]),
+            )
+            if requested[int(position)] > 0:
+                sources[int(position)] = (
+                    "provisional-residual"
+                    if entry.status == "provisional"
+                    else "reliability-gated-residual"
+                )
+
+    probabilities, applied, cap_reasons = apply_dynamic_correction(
+        global_values,
+        residual_values,
+        requested,
+    )
+    routing = [
+        {
+            "pitcherReliability": float(reliability),
+            "contextGate": float(gate),
+            "effectiveScale": float(scale),
+            "capReason": cap_reason,
+            "hardGateReason": hard_reason,
+        }
+        for reliability, gate, scale, cap_reason, hard_reason in zip(
+            base_reliability,
+            gate_values,
+            applied,
+            cap_reasons,
+            hard_reasons,
+            strict=True,
+        )
+    ]
+    return probabilities, sources, routing

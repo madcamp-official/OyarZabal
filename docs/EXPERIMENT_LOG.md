@@ -153,3 +153,24 @@ Git revision:
 - 이 시점부터 해당 2026-03-25~07-25 구간은 공개된 benchmark다. 이후 모델
   변경이나 게이트 선택에 이 결과를 사용하면 같은 구간을 독립 홀드아웃으로
   다시 주장하지 않는다.
+
+## 2026-07-27 — V6 reliability-gated residual
+
+- 2,990,491구로 Global calibration, pooled residual, binary context Gate를
+  재학습했다. 클래스별 logit calibration effective weight는 0.5가 채택됐다.
+- 2025 MLB 전체에서 calibrated Global은 Accuracy 0.4992, Macro F1 0.4711,
+  Log Loss 1.0963을 기록했다.
+- 2025 residual pool 189,721구에서 V6는 calibrated Global 대비 Accuracy를
+  0.4639에서 0.4656으로, Log Loss를 1.2077에서 1.2049로 개선했다.
+  Macro F1은 0.4350에서 0.4348로 0.00025 하락해 허용 범위 안이었다.
+- 엄격한 선수별 분포·calibration 게이트를 통과한 active는 10명이며 25명
+  목표나 상한을 적용하지 않았다.
+- 첫 전체 실행 후 최근 90일 기준을 리그 마지막 날짜로 계산한 오류를 발견했다.
+  각 투수의 마지막 경기 기준으로 수정하고 회귀 테스트를 추가한 뒤 전체
+  재학습했다. 최종 active 수는 10명으로 같았지만 공백 선수의 reliability가
+  정의대로 복원됐다.
+- 이미 공개된 2026-03-25~07-25는 회귀 진단에만 사용했다. V6 Final은 동일
+  표본에서 Accuracy 0.4878, Log Loss 1.1290이었으나 V6 개입 표본이
+  10,344구로 prospective 최소 15,000구에 미달해 승격하지 않았다.
+- schema v6 쇼케이스는 307구 중 90구에 V6를 적용해 Accuracy 0.5407,
+  Macro F1 0.4615, Log Loss 0.9996을 기록했다.

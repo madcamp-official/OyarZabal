@@ -16,10 +16,11 @@ const prediction = {
   },
 };
 const manifest = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   generatedAt: "2026-07-24",
   caveat: "showcase",
   finalModel: "xgboost",
+  deploymentStatus: "shadow",
   pitchGroups: {
     FOUR_SEAM: "포심",
     MOVING_FASTBALL: "무빙 패스트볼",
@@ -79,6 +80,25 @@ const game = {
           CHANGEUP: 0,
           SPLITTER_FORK: 0,
         },
+        classShareError: {
+          FOUR_SEAM: 0,
+          MOVING_FASTBALL: 0,
+          SLIDER: 0,
+          CURVE: 0,
+          CHANGEUP: 0,
+          SPLITTER_FORK: 0,
+        },
+        maxClassShareError: 0,
+        totalVariationDistance: 0,
+        classCalibrationError: {
+          FOUR_SEAM: 0,
+          MOVING_FASTBALL: 0,
+          SLIDER: 0,
+          CURVE: 0,
+          CHANGEUP: 0,
+          SPLITTER_FORK: 0,
+        },
+        maxClassCalibrationError: 0,
         perClass: Object.fromEntries(
           ["FOUR_SEAM", "MOVING_FASTBALL", "SLIDER", "CURVE", "CHANGEUP", "SPLITTER_FORK"].map(
             (group) => [
@@ -106,11 +126,15 @@ const game = {
     score: { away: 0, home: 0 },
     recentPitches: [],
     modelSource: {
-      type: "pooled-residual",
-      label: "Pooled Residual + Global",
-      globalWeight: 0.25,
-      specialistWeight: 0.75,
-      residualScale: 0.75,
+      type: "reliability-gated-residual",
+      label: "V6 Reliability-Gated Residual",
+      globalWeight: 0.8,
+      specialistWeight: 0.2,
+      pitcherReliability: 0.4,
+      contextGate: 0.5,
+      effectiveScale: 0.2,
+      capReason: null,
+      hardGateReason: null,
     },
     predictions: { final: prediction, xgboost: prediction, similarity: prediction, baseline: prediction },
     explanations: ["첫 투구"],
@@ -135,6 +159,8 @@ test("keeps the actual pitch hidden until reveal", async () => {
   expect(screen.getByText("MODEL REPORT")).toBeInTheDocument();
   expect(screen.getByText("구종별 진단")).toBeInTheDocument();
   expect(screen.getAllByText("균형 XGBoost")).toHaveLength(2);
-  expect(screen.getByText("Pooled Residual + Global")).toBeInTheDocument();
-  expect(screen.getByText("Residual scale 75%")).toBeInTheDocument();
+  expect(screen.getByText("V6 Reliability-Gated Residual")).toBeInTheDocument();
+  expect(
+    screen.getByText("투수 신뢰도 40% · 상황 Gate 50% · 적용 20%"),
+  ).toBeInTheDocument();
 });
