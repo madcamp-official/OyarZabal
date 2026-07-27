@@ -50,6 +50,14 @@ effective scale =
   않는다.
 - 2026-07-26 이후 최소 30일·전체 100,000구·V6 개입 15,000구가 쌓인 첫
   시점에 V5 대비 paired game bootstrap으로 승격을 판단한다.
+- 버전 간 전체 성능은 같은 기간의 MLB 전체 지원 구종으로 비교한다.
+- 개인화 성능은 V5에서 활성화됐던 30명을
+  `v5-enabled-pitchers-v1` cohort로 고정해 모든 버전에 똑같이 적용한다.
+  각 모델의 현재 active 선수 표본은 운영 진단용이며 버전 우위 판단에는
+  사용하지 않는다.
+- 평가 결과에는 exact row fingerprint를 남긴다. 같은 benchmark 기간의
+  fingerprint가 기존 값과 다르면 데이터나 taxonomy가 바뀐 것이므로 평가를
+  중단한다.
 
 Active 선수는 2024·2025에서 다음을 모두 통과해야 한다.
 
@@ -81,7 +89,8 @@ Active 목표나 상한은 없다. 통과하지 못한 선수는 shadow로 보�
 
 - Registry schema v5: calibration, reliability 구성요소, Gate metadata,
   active/shadow/provisional 상태와 실패 사유
-- Holdout schema v2: 전체·선수별·월별 지표와 paired bootstrap CI
+- Holdout schema v3: 고정 evaluation cohort와 exact row fingerprint,
+  전체·선수별·월별 지표와 paired bootstrap CI
 - Replay schema v6: reliability, context Gate, effective scale과 cap/fallback 사유
 - 쇼케이스는 경기 시작 전 데이터만으로 별도 학습하며 `V6 Shadow`로 표시한다.
 - 대형 작업은 순차 실행하고 RAM 9GiB 미만, 디스크 15GiB 미만 또는 GPU

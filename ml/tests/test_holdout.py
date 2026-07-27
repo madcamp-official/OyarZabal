@@ -3,7 +3,13 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from oyarzabal.holdout import _registry, frozen_rows
+from oyarzabal.holdout import (
+    COMPARISON_COHORT_ID,
+    V5_EVALUATION_PITCHER_IDS,
+    _registry,
+    evaluation_sample_fingerprint,
+    frozen_rows,
+)
 
 
 def _pitch(path: Path, game_date: str, game_pk: int) -> None:
@@ -88,3 +94,23 @@ def test_registry_reads_v6_reliability_metadata() -> None:
     payload["specialists"]["10"]["dataCutoff"] = "2025-12-31"
     with pytest.raises(ValueError, match="post-2025"):
         _registry(json.loads(json.dumps(payload)))
+
+
+def test_v5_evaluation_cohort_is_frozen_and_sample_hash_ignores_row_order() -> None:
+    assert COMPARISON_COHORT_ID == "v5-enabled-pitchers-v1"
+    assert len(V5_EVALUATION_PITCHER_IDS) == 30
+    rows = pd.DataFrame(
+        {
+            "game_date": pd.to_datetime(["2026-04-02", "2026-04-01"]),
+            "game_pk": [2, 1],
+            "at_bat_number": [1, 1],
+            "pitch_number": [1, 1],
+            "pitcher_id": [543037, 458681],
+            "batter_id": [20, 21],
+            "target": [0, 1],
+        }
+    )
+
+    assert evaluation_sample_fingerprint(rows) == evaluation_sample_fingerprint(
+        rows.iloc[::-1]
+    )

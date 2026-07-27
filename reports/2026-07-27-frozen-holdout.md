@@ -54,6 +54,10 @@ shard를 별도 디렉터리에 격리했다. 학습 폴더나 registry에 2026 
 | 98명 registry pool | 90,145 | 44.10% | 44.68% | +0.58%p |
 | active/provisional | 28,734 | 44.15% | 45.97% | **+1.83%p** |
 
+이 30명·28,734구를 이후 버전의 공통 개인화 비교 cohort
+`v5-enabled-pitchers-v1`로 동결했다. 후속 모델의 active 선수가 바뀌어도
+버전 비교에는 이 선수들의 동일 투구만 사용한다.
+
 라우팅은 Global 430,796구, active pooled residual 27,796구, provisional
 residual 938구였다. 즉 residual이 실제 개입한 비율은 6.25%다.
 

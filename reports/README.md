@@ -7,8 +7,8 @@
 
 > [!IMPORTANT]
 > **현재 결론:** V6는 class-wise calibration과 reliability-gated residual을
-> 적용해 2025 후향 검증을 통과했다. 엄격한 게이트를 통과한 active는
-> 10명이며 아직 미래 prospective 승격 전인 shadow다.
+> 적용해 2025 후향 검증을 통과했다. 그러나 V5의 30명·28,734구 고정
+> 개인화 cohort에서는 V5보다 낮아 shadow를 유지한다.
 
 ## 모델 진화 흐름
 
@@ -19,7 +19,7 @@ flowchart TD
     V3["V3 · 현재 6종 taxonomy<br/>전역 포심 쏠림 해소"]
     V4["V4 · pooled residual<br/>active 25명 + provisional 5명"]
     V5["V5 · V4 구조의 2026 외부 검증<br/>전체 +0.11%p · 적용 범위 +1.83%p"]
-    V6["V6 · Reliability Gate<br/>active 10명 · prospective 대기"]
+    V6["V6 · Reliability Gate<br/>고정 cohort에서 V5 열세 · shadow"]
     V1 --> V2 --> V3 --> V4 --> V5 --> V6
 ```
 
@@ -32,7 +32,7 @@ flowchart TD
 | [V3](2026-07-25-taxonomy-v4.md) | 현재 6종 taxonomy | 2025 750,581구 | 48.87% | 47.24% | 1.1103 | taxonomy 기준선 |
 | [V4](2026-07-27-pooled-residual.md) | pooled residual | 2025 **98명 내부 pool** 189,721구 | 45.08% → **46.48%** | 43.46% → **43.57%** | 1.2237 → **1.2054** | 전체 MLB 점수 아님 |
 | [V5](2026-07-27-frozen-holdout.md) | **V4 구조 외부 검증** | 2026 **MLB 전체 동일 표본** 459,530구 | 47.62% → **47.73%** | 46.47% → **46.50%** | 1.1452 → **1.1437** | 제품 단위 개선 확인 |
-| [V6](2026-07-27-v6-reliability-gate.md) | Calibration + reliability gate | 2025 residual pool 189,721구 | 46.39% → **46.56%** | 43.50% → 43.48% | 1.2077 → **1.2049** | Shadow · 미래 승격 대기 |
+| [V6](2026-07-27-v6-reliability-gate.md) | Calibration + reliability gate | 2026 **V5 고정 30명** 28,734구 | **45.96%** → 45.55% | **42.01%** → 41.68% | **1.2422** → 1.2475 | V5 대비 열세 · Shadow |
 
 V1과 V2는 포심·싱커·커터·슬라이더·커브·체인지업 taxonomy다. V3 이후는
 포심·무빙 패스트볼·슬라이더 계열·커브 계열·체인지업·스플리터/포크
@@ -78,8 +78,21 @@ residual 적용 범위가 작은 효과를 그대로 반영한다.
 | V3 Global 구조 ↔ V4 Final routed 구조 | 가능 | 같은 2026 전체 표본의 V5 외부 평가 사용 |
 | V4 Global ↔ Residual | 가능 | 같은 투구에 두 모델을 적용 |
 | V5 Global ↔ Final | 가능 | 같은 2026 동결 holdout에 적용 |
-| V5 ↔ V6 공개 2026 | 회귀 진단만 | V6 설계 전에 이미 결과를 열어 독립 승격 근거가 아님 |
+| V5 ↔ V6 공개 2026 | 성능 회귀 진단만 | 같은 고정 cohort지만 V6 설계 전에 이미 결과를 열어 독립 승격 근거가 아님 |
 | V5 ↔ V6 2026-07-26 이후 | 가능 | 사전 고정한 prospective 조건 충족 후 첫 평가만 사용 |
+
+## 통일된 평가 표본
+
+앞으로 버전 간 비교는 다음 두 표본만 공식 비교에 사용한다.
+
+- 전체 제품 성능: 같은 기간의 MLB 전체 지원 구종
+- 개인화 성능: V5 active·provisional 30명을 고정한
+  `v5-enabled-pitchers-v1`
+
+각 모델의 registry pool이나 active 선수만 추린 결과는 운영 진단일 뿐 버전
+우위를 판단하지 않는다. 모든 holdout 결과에는 exact row fingerprint를
+기록하며, 2026-03-25~07-25 고정 개인화 표본은 28,734구,
+`a2d7de0347b98e9cac05fe1ee22eedc1eab33aa5430e770089755f8945198232`다.
 
 초기 13명·7종 MVP와 누수 방지 피처 전환 단계는 완결된 평가 지표가 남아 있지
 않아 별도 성능 리포트를 만들지 않았다. 해당 사실과 실패·수정 이력은

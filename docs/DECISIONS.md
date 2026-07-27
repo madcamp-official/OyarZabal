@@ -73,3 +73,11 @@ API, 데이터베이스, 계정 시스템을 추가하지 않는다.
 TVD, 주요 구종 recall과 class probability calibration을 사용한다. 2024·2025
 게이트를 통과한 수만 active로 두며 V6는 2026-07-26 이후 prospective 조건을
 통과할 때까지 shadow로 유지한다.
+
+## 2026-07-27 — V5 개인화 평가 cohort를 버전 공통 기준으로 동결
+
+모델마다 active 선수가 달라 V5의 28,734구와 V6의 10,344구를 직접 비교할 수
+없었다. V5에서 활성화된 30명을 `v5-enabled-pitchers-v1`로 동결하고, 이후
+모든 모델의 개인화 성능을 이 선수들의 동일 기간·동일 투구에서 비교한다.
+모델별 active·registry pool은 운영 진단으로만 남긴다. 같은 benchmark를
+재평가할 때는 exact row fingerprint까지 일치해야 한다.

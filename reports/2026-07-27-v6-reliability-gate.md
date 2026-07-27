@@ -3,7 +3,8 @@
 > [!IMPORTANT]
 > **한 줄 결론:** Global의 클래스별 calibration을 개선하고, residual을
 > 투수 신뢰도와 상황 Gate만큼만 적용하도록 단순화했다. 2025 후향 검증은
-> 통과했으며 active는 10명이다. 아직 미래 prospective 승격 전인 shadow다.
+> 통과했지만 V5의 고정 개인화 cohort에서는 V5보다 나빴다. active는
+> 10명이며 V6는 shadow를 유지한다.
 
 ## 한눈에 보기
 
@@ -95,6 +96,8 @@ xychart-beta
 아래 결과는 V6를 보고 선택하는 데 사용하지 않았으며, 새로운 독립 승격
 근거로 주장하지 않는다.
 
+### MLB 전체 동일 표본
+
 | 2026-03-25~07-25 전체 459,530구 | Accuracy | Macro F1 | Log Loss |
 |---|---:|---:|---:|
 | V5 Final | 47.73% | 46.50% | 1.1437 |
@@ -116,6 +119,30 @@ xychart-beta
 이 구간은 기간과 전체 투구 수 조건은 충족하지만 V6 개입이 15,000구에
 미달하므로 승격 조건도 충족하지 않는다.
 
+### V5 고정 개인화 cohort
+
+기존에는 각 모델의 active 선수만 평가해 V5 28,734구와 V6 10,344구가 서로
+달랐다. 이제 V5 active·provisional 30명을 `v5-enabled-pitchers-v1`로
+고정하고 모든 모델을 정확히 같은 투구에서 비교한다.
+
+| 동일 30명·28,734구 | Accuracy | Macro F1 | Log Loss |
+|---|---:|---:|---:|
+| V5 Final | **45.96%** | **42.01%** | **1.2422** |
+| V6 Calibrated Global | 45.50% | 41.67% | 1.2478 |
+| V6 Final | 45.55% | 41.68% | 1.2475 |
+| V6 Final − V5 Final | **−0.41%p** | **−0.34%p** | **+0.0053** |
+
+V6 residual은 V6 Global보다 Accuracy를 0.05%p 높이고 Log Loss를 0.00026
+낮췄다. 그러나 모델 전체로는 V5 Final보다 세 지표 모두 나쁘다. game
+bootstrap의 V6−V5 Log Loss 개선 CI도 `−0.0067 ~ −0.0041`로 0보다 낮다.
+따라서 표본을 통일한 현재 판정은 **V6 미승격**이다.
+
+이 cohort의 exact row fingerprint는
+`a2d7de0347b98e9cac05fe1ee22eedc1eab33aa5430e770089755f8945198232`다.
+향후 같은 benchmark를 실행할 때 이 값이 달라지면 평가를 실패시킨다.
+새로운 기간에서도 선수 cohort는 그대로 유지하고 해당 기간의 fingerprint를
+새로 기록한다. 모델별 active 선수 표본은 진단용으로만 표시한다.
+
 ## 307구 역사적 쇼케이스
 
 | 모델 | Accuracy | Macro F1 | Log Loss |
@@ -128,12 +155,14 @@ xychart-beta
 
 ## 판단
 
-V6는 고정 scale과 25명 노출 상한을 제거하면서도 2024·2025 aggregate
-게이트를 통과했다. `maxClassShareError`뿐 아니라 확률 calibration과 전체
-분포 거리까지 함께 측정해 선수별 국소 쏠림을 더 엄격하게 제한한다.
+V6는 고정 scale과 25명 노출 상한을 제거하면서 2024·2025 내부 게이트는
+통과했다. `maxClassShareError`뿐 아니라 확률 calibration과 전체 분포
+거리까지 함께 측정한다.
 
-다만 active 10명의 미래 표본이 아직 15,000구에 못 미친다. 현재 결과는
-“구현 및 후향 검증 완료”이지 “V5 대체 승인”이 아니다.
+그러나 V5 고정 개인화 cohort에서 V5보다 성능이 낮았다. 개입 표본도 아직
+15,000구에 못 미친다. 현재 결과는 “구현 및 후향 검증 완료”이지
+“V5 대체 승인”이 아니며, prospective 승격 시 MLB 전체와 고정 개인화
+cohort를 모두 통과해야 한다.
 
 ## 재현 근거
 

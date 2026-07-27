@@ -174,3 +174,17 @@ Git revision:
   10,344구로 prospective 최소 15,000구에 미달해 승격하지 않았다.
 - schema v6 쇼케이스는 307구 중 90구에 V6를 적용해 Accuracy 0.5407,
   Macro F1 0.4615, Log Loss 0.9996을 기록했다.
+
+## 2026-07-27 — V5·V6 공통 evaluation cohort 재평가
+
+- 기존 V5 활성·provisional 30명을 `v5-enabled-pitchers-v1`로 동결했다.
+  2026-03-25~07-25의 정확한 표본은 28,734구이며 fingerprint는
+  `a2d7de0347b98e9cac05fe1ee22eedc1eab33aa5430e770089755f8945198232`다.
+- 같은 28,734구에서 V5 Final은 Accuracy 0.4596, Macro F1 0.4201,
+  Log Loss 1.2422를 기록했다. V6 Final은 각각 0.4555, 0.4168, 1.2475로
+  V5보다 Accuracy 0.41%p, Macro F1 0.34%p 낮고 Log Loss가 0.0053
+  나빴다.
+- V6 residual 자체는 V6 Global 대비 Accuracy를 0.05%p, Log Loss를
+  0.00026 개선했지만 V5 Final을 넘지 못했다. 따라서 V6는 shadow를
+  유지하며, prospective 승격에는 MLB 전체와 고정 개인화 cohort를 모두
+  통과하도록 게이트를 강화했다.
