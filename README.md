@@ -36,8 +36,8 @@ uv run oyarzabal-fetch-statcast \
 uv run oyarzabal-evaluate-holdout
 uv run oyarzabal-build-demo \
   --history data/raw/statcast \
-  --game /root/workspace/pitchpredict-smoke-test/data/cache/games/775300.parquet \
-  --predictions /root/workspace/pitchpredict-smoke-test/outputs/predictions.csv
+  --game /path/to/game.parquet \
+  --predictions /path/to/predictions.csv
 uv run pytest -q
 ```
 
@@ -46,6 +46,18 @@ uv run pytest -q
 `artifacts/runs/<run-id>`에 저장합니다.
 2026 홀드아웃 평가는 2025년 말까지 학습한 모델만 허용하며, 학습 폴더나
 registry에서 2026 데이터가 감지되면 중단합니다.
+
+## Codex Worktree
+
+Codex 앱에서 이 저장소 루트를 프로젝트로 등록한 뒤 Local Environment의 setup
+script를 다음과 같이 설정합니다.
+
+```bash
+bash .codex/setup.sh
+```
+
+이 script는 Python 및 web dependency만 설치합니다. Git에서 제외된 원본 데이터와
+학습 모델은 복사하지 않습니다.
 
 ## 웹앱
 
