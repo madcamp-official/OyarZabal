@@ -10,10 +10,12 @@ from oyarzabal.residual import (
     gate_feature_frame,
     gate_targets,
     hard_safety_mask,
+    maximum_safe_scale_multiplier,
     pitcher_metrics_pass,
     predict_context_gate,
     predict_correction,
     provisional_scale,
+    relative_pitcher_failure_reasons,
     reliability_score,
     residual_feature_frame,
     train_final_residual,
@@ -129,6 +131,48 @@ def test_dynamic_scale_and_caps_preserve_probability_rows() -> None:
     assert cap_reason == ["js_and_probability_shift"]
     assert probabilities.sum(axis=1) == pytest.approx([1])
     assert np.max(np.abs(probabilities - global_probabilities)) <= 0.200001
+
+
+def test_safe_scale_allows_inherited_error_and_row_scales() -> None:
+    actual = np.arange(12) % 6
+    global_probabilities = np.full((12, 6), 1 / 6)
+    correction = np.full((12, 6), -0.2)
+    correction[np.arange(12), actual] = 1.0
+
+    adjusted = apply_correction(
+        global_probabilities,
+        correction,
+        np.linspace(0.01, 0.12, 12),
+    )
+    analysis = maximum_safe_scale_multiplier(
+        actual,
+        global_probabilities,
+        correction,
+        np.full(12, 0.1),
+    )
+    global_metrics = {
+        "logLoss": 1.2,
+        "accuracy": 0.5,
+        "macroF1": 0.5,
+        "zeroRecallClasses": ["MOVING_FASTBALL"],
+        "actualDistribution": {"MOVING_FASTBALL": 0.2},
+        "maxClassShareError": 0.25,
+        "totalVariationDistance": 0.25,
+        "maxClassCalibrationError": 0.12,
+    }
+    improved_metrics = {
+        **global_metrics,
+        "logLoss": 1.1,
+        "maxClassShareError": 0.22,
+        "totalVariationDistance": 0.24,
+        "maxClassCalibrationError": 0.11,
+    }
+
+    assert adjusted.sum(axis=1) == pytest.approx(np.ones(12))
+    assert analysis["maxSafeMultiplier"] == 1
+    assert relative_pitcher_failure_reasons(
+        global_metrics, improved_metrics
+    ) == []
 
 
 def test_pitcher_reliability_uses_recent_window() -> None:
