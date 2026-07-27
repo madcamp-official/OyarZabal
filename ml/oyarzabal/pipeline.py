@@ -7,6 +7,7 @@ import gc
 import json
 import traceback
 import urllib.request
+from collections.abc import Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -51,7 +52,6 @@ from .taxonomy import (
 )
 from .training import GLOBAL_SPEC, PILOT_PITCHERS, global_specs
 
-DEFAULT_SOURCE = Path("/root/workspace/pitchpredict-smoke-test")
 GAME_PK = 775300
 GAME_DATE = pd.Timestamp("2024-10-25")
 
@@ -591,22 +591,22 @@ def build_demo(args: argparse.Namespace) -> None:
     print(f"Built {len(game)} replay pitches at {game_path}")
 
 
-def _parser() -> argparse.ArgumentParser:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--history",
         type=Path,
-        default=DEFAULT_SOURCE / "data/cache/pitchpredict/pitcher",
+        required=True,
     )
     parser.add_argument(
         "--game",
         type=Path,
-        default=DEFAULT_SOURCE / f"data/cache/games/{GAME_PK}.parquet",
+        required=True,
     )
     parser.add_argument(
         "--predictions",
         type=Path,
-        default=DEFAULT_SOURCE / "outputs/predictions.csv",
+        required=True,
     )
     parser.add_argument(
         "--output",
@@ -618,11 +618,11 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("artifacts/runs"),
     )
-    return parser
+    return parser.parse_args(argv)
 
 
 def main() -> None:
-    args = _parser().parse_args()
+    args = parse_args()
     existing_runs = set(args.runs.glob("*")) if args.runs.exists() else set()
     try:
         build_demo(args)

@@ -32,14 +32,26 @@ uv run oyarzabal-fetch-statcast
 uv run oyarzabal-train-hybrid
 uv run oyarzabal-build-demo \
   --history data/raw/statcast \
-  --game /root/workspace/pitchpredict-smoke-test/data/cache/games/775300.parquet \
-  --predictions /root/workspace/pitchpredict-smoke-test/outputs/predictions.csv
+  --game <경기 parquet 경로> \
+  --predictions <예측 CSV 경로>
 uv run pytest -q
 ```
 
 수집은 `data/raw/statcast`의 월별 Parquet로 재개할 수 있습니다. 학습 모델은
 `models/hybrid`, 정적 JSON은 `web/public/data`, 실행 기록은
 `artifacts/runs/<run-id>`에 저장합니다.
+
+## Codex Worktree
+
+Codex 앱에서 이 저장소 루트를 프로젝트로 등록한 뒤 Local Environment의 setup
+script를 다음과 같이 설정합니다.
+
+```bash
+bash .codex/setup.sh
+```
+
+이 script는 Python 및 web dependency만 설치합니다. Git에서 제외된 원본 데이터와
+학습 모델은 복사하지 않습니다.
 
 ## 웹앱
 
