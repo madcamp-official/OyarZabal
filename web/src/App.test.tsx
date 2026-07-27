@@ -16,7 +16,7 @@ const prediction = {
   },
 };
 const manifest = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   generatedAt: "2026-07-24",
   caveat: "showcase",
   finalModel: "xgboost",
@@ -106,10 +106,11 @@ const game = {
     score: { away: 0, home: 0 },
     recentPitches: [],
     modelSource: {
-      type: "hybrid",
-      label: "Pitcher Personalizer + Global",
+      type: "pooled-residual",
+      label: "Pooled Residual + Global",
       globalWeight: 0.25,
       specialistWeight: 0.75,
+      residualScale: 0.75,
     },
     predictions: { final: prediction, xgboost: prediction, similarity: prediction, baseline: prediction },
     explanations: ["첫 투구"],
@@ -134,6 +135,6 @@ test("keeps the actual pitch hidden until reveal", async () => {
   expect(screen.getByText("MODEL REPORT")).toBeInTheDocument();
   expect(screen.getByText("구종별 진단")).toBeInTheDocument();
   expect(screen.getAllByText("균형 XGBoost")).toHaveLength(2);
-  expect(screen.getByText("Pitcher Personalizer + Global")).toBeInTheDocument();
-  expect(screen.getByText("Personalizer shrinkage 75%")).toBeInTheDocument();
+  expect(screen.getByText("Pooled Residual + Global")).toBeInTheDocument();
+  expect(screen.getByText("Residual scale 75%")).toBeInTheDocument();
 });

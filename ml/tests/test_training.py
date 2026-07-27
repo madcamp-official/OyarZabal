@@ -12,7 +12,7 @@ def test_validation_folds_are_strictly_time_ordered() -> None:
         }
     )
     folds = validation_folds(rows)
-    assert [year for year, _, _ in folds] == [2024, 2025]
+    assert [year for year, _, _ in folds] == [2023, 2024, 2025]
     for _, train, evaluation in folds:
         assert rows.loc[train, "game_date"].max() < rows.loc[
             evaluation, "game_date"
@@ -20,7 +20,9 @@ def test_validation_folds_are_strictly_time_ordered() -> None:
 
 
 def test_validation_folds_require_every_evaluation_year() -> None:
-    rows = pd.DataFrame({"game_date": pd.to_datetime(["2023-01-01", "2024-01-01"])})
+    rows = pd.DataFrame(
+        {"game_date": pd.to_datetime(["2022-01-01", "2023-01-01", "2024-01-01"])}
+    )
     with pytest.raises(ValueError, match="2025"):
         validation_folds(rows)
 

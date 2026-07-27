@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 
 import numpy as np
 import pandas as pd
 
 from .metrics import evaluate_diagnostics, validate_probability_matrix
+from .residual import apply_correction, provisional_scale
 from .taxonomy import PITCH_GROUPS
 
 
@@ -24,6 +26,10 @@ class RegistryEntry:
     spec: str | None = None
     logit_bias: tuple[float, ...] | None = None
     personalizer_strength: float | None = None
+    status: str = "inactive"
+    residual_scale: float | None = None
+    selection_rank: int | None = None
+    support: Mapping[str, int] | None = None
 
     @property
     def global_weight(self) -> float:
@@ -45,6 +51,10 @@ def serialize_registry_entry(
         "spec": entry.spec,
         "logitBias": list(entry.logit_bias) if entry.logit_bias is not None else None,
         "personalizerStrength": entry.personalizer_strength,
+        "status": entry.status,
+        "residualScale": entry.residual_scale,
+        "selectionRank": entry.selection_rank,
+        "support": dict(entry.support) if entry.support is not None else None,
         "reason": entry.reason,
     }
 
@@ -333,4 +343,53 @@ def personalize_by_pitcher(
         )
         for position in positions:
             sources[int(position)] = "hybrid"
+    return output, sources
+
+
+def apply_pooled_residual_by_pitcher(
+    pitcher_ids: np.ndarray,
+    global_probabilities: np.ndarray,
+    correction: np.ndarray,
+    registry: Mapping[int, RegistryEntry],
+    *,
+    prediction_dates: Sequence[date] | None = None,
+) -> tuple[np.ndarray, list[str]]:
+    global_values = validate_probability_matrix(global_probabilities)
+    residual_values = np.asarray(correction, dtype=float)
+    ids = np.asarray(pitcher_ids, dtype=int)
+    if len(ids) != len(global_values) or residual_values.shape != global_values.shape:
+        raise ValueError("pooled residual routing inputs are misaligned")
+    if prediction_dates is not None and len(prediction_dates) != len(ids):
+        raise ValueError("prediction dates and pitcher IDs differ in length")
+
+    output = global_values.copy()
+    sources = ["global"] * len(output)
+    for pitcher_id, entry in registry.items():
+        positions = np.flatnonzero(ids == pitcher_id)
+        if not entry.enabled or not len(positions):
+            continue
+        scale = entry.residual_scale
+        if scale is None:
+            raise ValueError(f"missing residual scale for {pitcher_id}")
+        if entry.status == "provisional" and prediction_dates is not None:
+            if entry.data_cutoff is None:
+                raise ValueError(f"missing provisional cutoff for {pitcher_id}")
+            cutoff = date.fromisoformat(entry.data_cutoff)
+            for position in positions:
+                gap = max(0, (prediction_dates[int(position)] - cutoff).days)
+                effective = min(scale, provisional_scale(gap))
+                output[position : position + 1] = apply_correction(
+                    global_values[position : position + 1],
+                    residual_values[position : position + 1],
+                    effective,
+                )
+                sources[int(position)] = "provisional-residual"
+            continue
+        output[positions] = apply_correction(
+            global_values[positions],
+            residual_values[positions],
+            scale,
+        )
+        for position in positions:
+            sources[int(position)] = "pooled-residual"
     return output, sources

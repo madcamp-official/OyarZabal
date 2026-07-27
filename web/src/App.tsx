@@ -15,7 +15,7 @@ function useReplayData() {
         return response.json() as Promise<Manifest>;
       })
       .then(async (manifest) => {
-        if (manifest.schemaVersion !== 4) {
+        if (manifest.schemaVersion !== 5) {
           throw new Error("지원하지 않는 경기 데이터 버전입니다.");
         }
         const response = await fetch(manifest.games[0].path);
@@ -258,8 +258,8 @@ export default function App() {
             <span>MODEL SOURCE</span>
             <strong>{pitch.modelSource.label}</strong>
             <small>
-              {pitch.modelSource.type === "hybrid"
-                ? `Personalizer shrinkage ${Math.round(pitch.modelSource.specialistWeight * 100)}%`
+              {pitch.modelSource.type !== "global"
+                ? `Residual scale ${Math.round((pitch.modelSource.residualScale ?? pitch.modelSource.specialistWeight) * 100)}%`
                 : "Global 100%"}
             </small>
           </div>
