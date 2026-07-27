@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import App from "./App";
@@ -16,7 +16,7 @@ const prediction = {
   },
 };
 const manifest = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   generatedAt: "2026-07-24",
   caveat: "showcase",
   finalModel: "xgboost",
@@ -28,6 +28,19 @@ const manifest = {
     CURVE: "커브 계열",
     CHANGEUP: "체인지업",
     SPLITTER_FORK: "스플리터·포크",
+  },
+  pitchFamilies: {
+    FASTBALL: "패스트볼 계열",
+    BREAKING: "브레이킹볼 계열",
+    OFFSPEED: "오프스피드 계열",
+  },
+  pitchGroupFamilies: {
+    FOUR_SEAM: "FASTBALL",
+    MOVING_FASTBALL: "FASTBALL",
+    SLIDER: "BREAKING",
+    CURVE: "BREAKING",
+    CHANGEUP: "OFFSPEED",
+    SPLITTER_FORK: "OFFSPEED",
   },
   models: {
     final: "균형 XGBoost",
@@ -61,6 +74,8 @@ const game = {
       {
         n: 1,
         accuracy: 1,
+        familyAccuracy: 1,
+        hierarchicalAccuracy: 1,
         top3Accuracy: 1,
         macroF1: 1,
         logLoss: 0.3,
@@ -127,12 +142,14 @@ const game = {
     recentPitches: [],
     modelSource: {
       type: "reliability-gated-residual",
-      label: "V6 Reliability-Gated Residual",
+      label: "V7 Hierarchical Incremental Residual",
       globalWeight: 0.8,
       specialistWeight: 0.2,
       pitcherReliability: 0.4,
       contextGate: 0.5,
       effectiveScale: 0.2,
+      registryTier: "full",
+      scaleMultiplier: 1,
       capReason: null,
       hardGateReason: null,
     },
@@ -142,7 +159,10 @@ const game = {
   }],
 };
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 test("keeps the actual pitch hidden until reveal", async () => {
   vi.stubGlobal("fetch", vi.fn()
@@ -155,12 +175,33 @@ test("keeps the actual pitch hidden until reveal", async () => {
   expect(screen.queryByText("MODEL REPORT")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "실제 투구 공개" }));
   expect(screen.getByText("ACTUAL PITCH")).toBeInTheDocument();
-  expect(screen.getByText("✓ 정확한 예측")).toBeInTheDocument();
+  expect(screen.getByText("✓ 정확한 구종 적중")).toBeInTheDocument();
   expect(screen.getByText("MODEL REPORT")).toBeInTheDocument();
   expect(screen.getByText("구종별 진단")).toBeInTheDocument();
+  expect(screen.getByText("패스트볼 계열")).toBeInTheDocument();
+  expect(screen.getAllByText("Hierarchical Accuracy")).toHaveLength(3);
   expect(screen.getAllByText("균형 XGBoost")).toHaveLength(2);
-  expect(screen.getByText("V6 Reliability-Gated Residual")).toBeInTheDocument();
   expect(
-    screen.getByText("투수 신뢰도 40% · 상황 Gate 50% · 적용 20%"),
+    screen.getByText("V7 Hierarchical Incremental Residual"),
   ).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "투수 신뢰도 40% · 상황 Gate 50% · Registry full · 선수 배율 100% · 적용 20%",
+    ),
+  ).toBeInTheDocument();
+});
+
+test("awards a family hit when the exact pitch group is different", async () => {
+  const familyGame = structuredClone(game);
+  familyGame.pitches[0].actual.pitchGroup = "MOVING_FASTBALL";
+  vi.stubGlobal("fetch", vi.fn()
+    .mockResolvedValueOnce({ ok: true, json: async () => manifest })
+    .mockResolvedValueOnce({ ok: true, json: async () => familyGame }));
+
+  render(<App />);
+  await waitFor(() => expect(screen.getByText("Pitcher")).toBeInTheDocument());
+  fireEvent.click(screen.getByRole("button", { name: "실제 투구 공개" }));
+
+  expect(screen.getByText("△ 계열 적중")).toBeInTheDocument();
+  expect(screen.queryByText("✓ 정확한 구종 적중")).not.toBeInTheDocument();
 });

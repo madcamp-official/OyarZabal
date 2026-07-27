@@ -17,7 +17,7 @@ from .residual import (
     hard_safety_mask,
     provisional_scale,
 )
-from .taxonomy import PITCH_GROUPS
+from .taxonomy import PITCH_GROUP_FAMILY_LABELS, PITCH_GROUPS
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,9 @@ class RegistryEntry:
     reliability_components: Mapping[str, float | int] | None = None
     selection_rank: int | None = None
     support: Mapping[str, int] | None = None
+    scale_multiplier: float = 1.0
+    stale: bool = False
+    incremental_validation: Mapping[str, object] | None = None
 
     @property
     def global_weight(self) -> float:
@@ -69,6 +72,13 @@ def serialize_registry_entry(
         ),
         "selectionRank": entry.selection_rank,
         "support": dict(entry.support) if entry.support is not None else None,
+        "scaleMultiplier": entry.scale_multiplier,
+        "stale": entry.stale,
+        "incrementalValidation": (
+            dict(entry.incremental_validation)
+            if entry.incremental_validation is not None
+            else None
+        ),
         "reason": entry.reason,
     }
 
@@ -140,6 +150,8 @@ def personalizer_passes(
         candidate_metrics["logLoss"] < global_metrics["logLoss"]
         and candidate_metrics["macroF1"] > global_metrics["macroF1"]
         and candidate_metrics["accuracy"] >= global_metrics["accuracy"] - 0.005
+        and candidate_metrics["hierarchicalAccuracy"]
+        >= global_metrics["hierarchicalAccuracy"] - 0.005
         and not major_zero_recall
         and candidate_metrics["majorityPredictionGap"] <= 0.20
     )
@@ -217,6 +229,11 @@ def _diagnostics(actual: np.ndarray, probabilities: np.ndarray) -> dict[str, obj
         probabilities,
         labels=range(probabilities.shape[1]),
         names=[str(group) for group in PITCH_GROUPS[: probabilities.shape[1]]],
+        family_labels=(
+            PITCH_GROUP_FAMILY_LABELS
+            if probabilities.shape[1] == len(PITCH_GROUPS)
+            else None
+        ),
     )
 
 
@@ -244,6 +261,8 @@ def select_blend_weight(
             and metrics["logLoss"] < global_metrics["logLoss"]
             and metrics["macroF1"] > global_metrics["macroF1"]
             and metrics["accuracy"] >= global_metrics["accuracy"] - 0.005
+            and metrics["hierarchicalAccuracy"]
+            >= global_metrics["hierarchicalAccuracy"] - 0.005
             and not major_zero_recall
             and metrics["majorityPredictionGap"] <= 0.20
         )
@@ -442,12 +461,14 @@ def apply_reliability_gated_residual(
             continue
         if entry.reliability is None:
             raise ValueError(f"missing reliability for {pitcher_id}")
+        if not 0 < entry.scale_multiplier <= 1:
+            raise ValueError(f"invalid registry scale multiplier for {pitcher_id}")
         for position in positions:
             reliability = float(entry.reliability)
-            if entry.status == "provisional":
+            if entry.stale:
                 if prediction_dates is None or entry.data_cutoff is None:
                     raise ValueError(
-                        f"missing provisional date context for {pitcher_id}"
+                        f"missing stale date context for {pitcher_id}"
                     )
                 cutoff = date.fromisoformat(entry.data_cutoff)
                 gap = max(0, (prediction_dates[int(position)] - cutoff).days)
@@ -461,13 +482,9 @@ def apply_reliability_gated_residual(
                 reliability,
                 float(gate_values[int(position)]),
                 hard_safety_pass=bool(safety[int(position)]),
-            )
+            ) * entry.scale_multiplier
             if requested[int(position)] > 0:
-                sources[int(position)] = (
-                    "provisional-residual"
-                    if entry.status == "provisional"
-                    else "reliability-gated-residual"
-                )
+                sources[int(position)] = "reliability-gated-residual"
 
     probabilities, applied, cap_reasons = apply_dynamic_correction(
         global_values,
@@ -479,10 +496,21 @@ def apply_reliability_gated_residual(
             "pitcherReliability": float(reliability),
             "contextGate": float(gate),
             "effectiveScale": float(scale),
+            "registryTier": (
+                registry.get(int(pitcher_id)).status
+                if registry.get(int(pitcher_id)) is not None
+                else "shadow"
+            ),
+            "scaleMultiplier": (
+                float(registry[int(pitcher_id)].scale_multiplier)
+                if int(pitcher_id) in registry
+                else 0.0
+            ),
             "capReason": cap_reason,
             "hardGateReason": hard_reason,
         }
-        for reliability, gate, scale, cap_reason, hard_reason in zip(
+        for pitcher_id, reliability, gate, scale, cap_reason, hard_reason in zip(
+            ids,
             base_reliability,
             gate_values,
             applied,

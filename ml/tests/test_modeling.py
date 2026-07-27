@@ -33,6 +33,7 @@ def test_temperature_preserves_argmax_and_probability_mass() -> None:
 def test_candidate_selection_enforces_balance_gates_and_tie_breaks() -> None:
     reference = {
         "accuracy": 0.52,
+        "hierarchicalAccuracy": 0.60,
         "macroF1": 0.30,
         "logLoss": 1.20,
         "zeroRecallClasses": ["CURVE"],
@@ -42,6 +43,7 @@ def test_candidate_selection_enforces_balance_gates_and_tie_breaks() -> None:
         "name": "accurate-but-collapsed",
         "metrics": {
             "accuracy": 0.53,
+            "hierarchicalAccuracy": 0.61,
             "macroF1": 0.31,
             "logLoss": 1.10,
             "zeroRecallClasses": ["CURVE"],
@@ -52,6 +54,7 @@ def test_candidate_selection_enforces_balance_gates_and_tie_breaks() -> None:
         "name": "lower-loss",
         "metrics": {
             "accuracy": 0.518,
+            "hierarchicalAccuracy": 0.598,
             "macroF1": 0.34,
             "logLoss": 1.10,
             "zeroRecallClasses": [],
@@ -62,6 +65,7 @@ def test_candidate_selection_enforces_balance_gates_and_tie_breaks() -> None:
         "name": "balanced",
         "metrics": {
             "accuracy": 0.516,
+            "hierarchicalAccuracy": 0.596,
             "macroF1": 0.38,
             "logLoss": 1.104,
             "zeroRecallClasses": [],

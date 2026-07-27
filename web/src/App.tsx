@@ -15,7 +15,7 @@ function useReplayData() {
         return response.json() as Promise<Manifest>;
       })
       .then(async (manifest) => {
-        if (manifest.schemaVersion !== 6) {
+        if (manifest.schemaVersion !== 7) {
           throw new Error("지원하지 않는 경기 데이터 버전입니다.");
         }
         const response = await fetch(manifest.games[0].path);
@@ -63,25 +63,58 @@ function ProbabilityBars({
   pitch,
   model,
   labels,
+  familyLabels,
+  groupFamilies,
 }: {
   pitch: Pitch;
   model: ModelKey;
   labels: Record<string, string>;
+  familyLabels: Record<string, string>;
+  groupFamilies: Record<string, string>;
 }) {
   const prediction = pitch.predictions[model];
-  const sorted = Object.entries(prediction.probabilities).sort(
-    ([, left], [, right]) => right - left,
-  );
+  const families = Object.entries(familyLabels)
+    .map(([family, label]) => {
+      const children = Object.entries(prediction.probabilities)
+        .filter(([group]) => groupFamilies[group] === family)
+        .sort(([, left], [, right]) => right - left);
+      return {
+        family,
+        label,
+        probability: children.reduce((sum, [, value]) => sum + value, 0),
+        children,
+      };
+    })
+    .sort((left, right) => right.probability - left.probability);
   return (
     <div className="bars">
-      {sorted.map(([group, probability], index) => (
-        <div className={index === 0 ? "bar-row leading" : "bar-row"} key={group}>
-          <span>{labels[group]}</span>
-          <div className="track">
-            <i style={{ width: `${probability * 100}%` }} />
+      {families.map(({ family, label, probability, children }) => (
+        <section className="family-group" key={family}>
+          <div className="family-row">
+            <strong>{label}</strong>
+            <div className="track">
+              <i style={{ width: `${probability * 100}%` }} />
+            </div>
+            <b>{Math.round(probability * 100)}%</b>
           </div>
-          <b>{Math.round(probability * 100)}%</b>
-        </div>
+          {children.map(([group, childProbability]) => (
+            <div
+              className={
+                prediction.topPitch === group ? "bar-row leading" : "bar-row"
+              }
+              key={group}
+            >
+              <span>
+                {labels[group]}
+                {prediction.topPitch === group ? <small>TOP 1</small> : null}
+              </span>
+              <div className="track">
+                <i style={{ width: `${childProbability * 100}%` }} />
+              </div>
+              <b>{Math.round(childProbability * 100)}%</b>
+            </div>
+          ))}
+        </section>
       ))}
     </div>
   );
@@ -131,9 +164,13 @@ function MetricsTable({
         {modelOrder.map((model) => (
           <article key={model}>
             <span>{manifest.models[model]}</span>
-            <strong>{(game.metrics[model].accuracy * 100).toFixed(1)}%</strong>
-            <small>정확도</small>
+            <strong>
+              {(game.metrics[model].hierarchicalAccuracy * 100).toFixed(1)}%
+            </strong>
+            <small>Hierarchical Accuracy</small>
             <dl>
+              <div><dt>Exact</dt><dd>{(game.metrics[model].accuracy * 100).toFixed(1)}%</dd></div>
+              <div><dt>Family</dt><dd>{(game.metrics[model].familyAccuracy * 100).toFixed(1)}%</dd></div>
               <div><dt>Top 3</dt><dd>{(game.metrics[model].top3Accuracy * 100).toFixed(1)}%</dd></div>
               <div><dt>Macro F1</dt><dd>{game.metrics[model].macroF1.toFixed(3)}</dd></div>
               <div><dt>Log loss</dt><dd>{game.metrics[model].logLoss.toFixed(3)}</dd></div>
@@ -179,13 +216,19 @@ export default function App() {
   const [revealed, setRevealed] = useState(false);
   const [model, setModel] = useState<ModelKey>("final");
 
-  const runningAccuracy = useMemo(() => {
-    if (!data || index < 0) return 0;
+  const runningMetrics = useMemo(() => {
+    if (!data || index < 0) return { exact: 0, family: 0, hierarchical: 0 };
     const seen = data.game.pitches.slice(0, index + (revealed ? 1 : 0));
-    if (!seen.length) return 0;
-    return seen.filter(
-      (pitch) => pitch.predictions.final.topPitch === pitch.actual.pitchGroup,
+    if (!seen.length) return { exact: 0, family: 0, hierarchical: 0 };
+    const exact = seen.filter(
+      (item) => item.predictions.final.topPitch === item.actual.pitchGroup,
     ).length / seen.length;
+    const family = seen.filter(
+      (item) =>
+        data.manifest.pitchGroupFamilies[item.predictions.final.topPitch] ===
+        data.manifest.pitchGroupFamilies[item.actual.pitchGroup],
+    ).length / seen.length;
+    return { exact, family, hierarchical: (exact + family) / 2 };
   }, [data, index, revealed]);
 
   if (error) return <main className="state">{error}</main>;
@@ -193,6 +236,11 @@ export default function App() {
 
   const { game, manifest } = data;
   const pitch = game.pitches[index];
+  const predictedGroup = pitch.predictions[model].topPitch;
+  const exactHit = predictedGroup === pitch.actual.pitchGroup;
+  const familyHit =
+    manifest.pitchGroupFamilies[predictedGroup] ===
+    manifest.pitchGroupFamilies[pitch.actual.pitchGroup];
   const next = () => {
     setIndex((current) => Math.min(current + 1, game.pitches.length - 1));
     setRevealed(false);
@@ -262,6 +310,8 @@ export default function App() {
                 ? [
                     `투수 신뢰도 ${Math.round(pitch.modelSource.pitcherReliability * 100)}%`,
                     `상황 Gate ${Math.round((pitch.modelSource.contextGate ?? 0) * 100)}%`,
+                    `Registry ${pitch.modelSource.registryTier ?? "shadow"}`,
+                    `선수 배율 ${Math.round((pitch.modelSource.scaleMultiplier ?? 0) * 100)}%`,
                     `적용 ${Math.round((pitch.modelSource.effectiveScale ?? 0) * 100)}%`,
                     pitch.modelSource.capReason
                       ? `안전 제한: ${pitch.modelSource.capReason}`
@@ -286,7 +336,13 @@ export default function App() {
             <small>첫 투구</small>
           )}
         </div>
-        <ProbabilityBars pitch={pitch} model={model} labels={manifest.pitchGroups} />
+        <ProbabilityBars
+          pitch={pitch}
+          model={model}
+          labels={manifest.pitchGroups}
+          familyLabels={manifest.pitchFamilies}
+          groupFamilies={manifest.pitchGroupFamilies}
+        />
         <div className={revealed ? "reveal open" : "reveal"}>
           {revealed ? (
             <>
@@ -299,13 +355,17 @@ export default function App() {
                 </small>
               </div>
               <div className={
-                pitch.predictions[model].topPitch === pitch.actual.pitchGroup
+                exactHit
                   ? "verdict correct"
+                  : familyHit
+                    ? "verdict family"
                   : "verdict"
               }>
-                {pitch.predictions[model].topPitch === pitch.actual.pitchGroup
-                  ? "✓ 정확한 예측"
-                  : "× 다른 선택"}
+                {exactHit
+                  ? "✓ 정확한 구종 적중"
+                  : familyHit
+                    ? "△ 계열 적중"
+                    : "× 다른 계열"}
               </div>
             </>
           ) : (
@@ -327,9 +387,13 @@ export default function App() {
         >
           ← 이전
         </button>
-        <div>
-          <span>최종 후보 누적 정확도</span>
-          <strong>{(runningAccuracy * 100).toFixed(1)}%</strong>
+        <div className="running-metrics">
+          <span>누적 Exact</span>
+          <strong>{(runningMetrics.exact * 100).toFixed(1)}%</strong>
+          <span>Family</span>
+          <strong>{(runningMetrics.family * 100).toFixed(1)}%</strong>
+          <span>Hierarchical</span>
+          <strong>{(runningMetrics.hierarchical * 100).toFixed(1)}%</strong>
         </div>
         <button disabled={!revealed || index === game.pitchCount - 1} onClick={next}>
           다음 투구 →

@@ -23,13 +23,14 @@ from .hybrid import (
 from .metrics import bootstrap_log_loss_gain, evaluate_diagnostics
 from .modeling import predict_candidate
 from .residual import (
-    pitcher_residual_passes,
     predict_context_gate,
     predict_correction,
+    relative_pitcher_failure_reasons,
 )
-from .taxonomy import PITCH_GROUPS
+from .taxonomy import PITCH_GROUP_FAMILY_LABELS, PITCH_GROUPS
 
 DEFAULT_CUTOFF = pd.Timestamp("2025-12-31")
+PROSPECTIVE_START = pd.Timestamp("2026-07-26")
 COMPARISON_COHORT_ID = "v5-enabled-pitchers-v1"
 FROZEN_BENCHMARK = {
     "start": "2026-03-25",
@@ -136,6 +137,9 @@ def _registry(payload: dict[str, object]) -> dict[int, RegistryEntry]:
             reliability_components=raw.get("reliabilityComponents"),
             selection_rank=raw.get("selectionRank"),
             support=raw.get("support"),
+            scale_multiplier=float(raw.get("scaleMultiplier", 1.0)),
+            stale=bool(raw.get("stale", raw.get("status") == "provisional")),
+            incremental_validation=raw.get("incrementalValidation"),
         )
     return entries
 
@@ -146,6 +150,7 @@ def _metrics(rows: pd.DataFrame, probabilities: np.ndarray) -> dict[str, object]
         probabilities,
         labels=range(len(PITCH_GROUPS)),
         names=[str(group) for group in PITCH_GROUPS],
+        family_labels=PITCH_GROUP_FAMILY_LABELS,
     )
 
 
@@ -173,6 +178,13 @@ def evaluation_sample_fingerprint(rows: pd.DataFrame) -> str:
     canonical = canonical.sort_values(columns, kind="stable")
     payload = canonical.to_csv(index=False, lineterminator="\n").encode()
     return hashlib.sha256(payload).hexdigest()
+
+
+def promotion_sample_is_prospective(rows: pd.DataFrame) -> bool:
+    return bool(
+        not rows.empty
+        and rows["game_date"].min().normalize() >= PROSPECTIVE_START
+    )
 
 
 def _predict_models(
@@ -430,6 +442,32 @@ def evaluate_frozen_holdout(
         for value in routing
         if value["hardGateReason"] is not None
     )
+    registry_tiers = {}
+    pitcher_ids = rows["pitcher_id"].to_numpy(dtype=int)
+    for tier in ("full", "limited", "shadow"):
+        tier_ids = {
+            pitcher_id
+            for pitcher_id, entry in registry.items()
+            if entry.status == tier
+        }
+        mask = np.isin(pitcher_ids, list(tier_ids))
+        selected = rows.loc[mask]
+        registry_tiers[tier] = {
+            "pitchers": len(tier_ids),
+            "rows": int(np.count_nonzero(mask)),
+            "intervenedRows": int(np.count_nonzero((scale_values > 0) & mask)),
+            "global": _metrics(selected, global_probabilities[mask]),
+            "final": _metrics(selected, final_probabilities[mask]),
+            "pairedBootstrap": (
+                _paired(
+                    selected,
+                    global_probabilities[mask],
+                    final_probabilities[mask],
+                )
+                if mask.any()
+                else None
+            ),
+        }
     reference = None
     promotion = None
     if reference_predictions is not None and reference_probabilities is not None:
@@ -441,20 +479,37 @@ def evaluate_frozen_holdout(
             positions = np.flatnonzero(
                 rows["pitcher_id"].to_numpy(dtype=int) == pitcher_id
             )
+            selected = rows.iloc[positions]
             if len(positions) < 300:
-                continue
-            passed, player_global, player_candidate = pitcher_residual_passes(
-                rows["target"].to_numpy()[positions],
-                global_probabilities[positions],
-                final_probabilities[positions],
-                min_support=300,
-            )
-            if not passed:
+                reasons = ["insufficient_support"]
+                player_global = _metrics(
+                    selected,
+                    global_probabilities[positions],
+                )
+                player_candidate = _metrics(
+                    selected,
+                    final_probabilities[positions],
+                )
+            else:
+                player_global = _metrics(
+                    selected,
+                    global_probabilities[positions],
+                )
+                player_candidate = _metrics(
+                    selected,
+                    final_probabilities[positions],
+                )
+                reasons = relative_pitcher_failure_reasons(
+                    player_global,
+                    player_candidate,
+                )
+            if reasons:
                 promotion_probabilities[positions] = global_probabilities[positions]
                 player_failures.append(
                     {
                         "pitcherId": pitcher_id,
                         "support": int(len(positions)),
+                        "failureReasons": reasons,
                         "global": player_global,
                         "candidate": player_candidate,
                     }
@@ -484,18 +539,26 @@ def evaluate_frozen_holdout(
             rows["game_date"].max().normalize()
             - rows["game_date"].min().normalize()
         ).days + 1
+        is_prospective = promotion_sample_is_prospective(rows)
         failed_ids = {value["pitcherId"] for value in player_failures}
         intervention_mask = (scale_values > 0) & ~rows["pitcher_id"].isin(
             failed_ids
         ).to_numpy()
         intervened = int(np.count_nonzero(intervention_mask))
-        enough_data = days >= 30 and len(rows) >= 100_000 and intervened >= 15_000
+        enough_data = (
+            is_prospective
+            and days >= 30
+            and len(rows) >= 100_000
+            and intervened >= 15_000
+        )
         overall_metric_passed = (
             paired["ciLower"] > 0
             and candidate_metrics["accuracy"]
             >= reference_metrics["accuracy"] - 0.005
             and candidate_metrics["macroF1"]
             >= reference_metrics["macroF1"] - 0.005
+            and candidate_metrics["hierarchicalAccuracy"]
+            >= reference_metrics["hierarchicalAccuracy"] - 0.005
             and not candidate_metrics["zeroRecallClasses"]
             and candidate_metrics["maxClassShareError"] <= 0.20
             and candidate_metrics["totalVariationDistance"] <= 0.20
@@ -507,6 +570,8 @@ def evaluate_frozen_holdout(
             >= comparison_reference["accuracy"] - 0.005
             and comparison_candidate["macroF1"]
             >= comparison_reference["macroF1"] - 0.005
+            and comparison_candidate["hierarchicalAccuracy"]
+            >= comparison_reference["hierarchicalAccuracy"] - 0.005
             and not comparison_candidate["zeroRecallClasses"]
             and comparison_candidate["maxClassShareError"] <= 0.20
             and comparison_candidate["totalVariationDistance"] <= 0.20
@@ -518,6 +583,8 @@ def evaluate_frozen_holdout(
             "metrics": reference_metrics,
         }
         promotion = {
+            "prospectiveStart": PROSPECTIVE_START.date().isoformat(),
+            "prospectiveEvaluation": bool(is_prospective),
             "days": int(days),
             "rows": int(len(rows)),
             "intervenedRows": intervened,
@@ -537,7 +604,7 @@ def evaluate_frozen_holdout(
         }
 
     return {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "generatedAt": datetime.now(UTC).isoformat(),
         "trainingCutoff": str(registry_payload["dataCutoff"]),
         "holdoutStart": rows["game_date"].min().date().isoformat(),
@@ -565,6 +632,7 @@ def evaluate_frozen_holdout(
             "capReasons": dict(sorted(cap_counts.items())),
             "hardGateReasons": dict(sorted(hard_counts.items())),
         },
+        "registryTiers": registry_tiers,
         "scopes": scopes,
         "pitchers": pitchers,
         "months": months,
@@ -577,7 +645,7 @@ def main() -> None:
     parser.add_argument(
         "--holdout", type=Path, default=Path("data/holdout/statcast-2026")
     )
-    parser.add_argument("--models", type=Path, default=Path("models/v6"))
+    parser.add_argument("--models", type=Path, default=Path("models/v7"))
     parser.add_argument("--reference-models", type=Path)
     parser.add_argument("--start", type=pd.Timestamp)
     parser.add_argument("--output", type=Path)

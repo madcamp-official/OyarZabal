@@ -10,6 +10,8 @@ export interface ClassMetrics {
 export interface Metrics {
   n: number;
   accuracy: number;
+  familyAccuracy: number;
+  hierarchicalAccuracy: number;
   top3Accuracy: number;
   macroF1: number;
   logLoss: number;
@@ -58,6 +60,8 @@ export interface Pitch {
     pitcherReliability?: number;
     contextGate?: number;
     effectiveScale?: number;
+    registryTier?: "full" | "limited" | "shadow";
+    scaleMultiplier?: number;
     capReason?: string | null;
     hardGateReason?: string | null;
   };
@@ -87,7 +91,7 @@ export interface Game {
 }
 
 export interface Manifest {
-  schemaVersion: 6;
+  schemaVersion: 7;
   generatedAt: string;
   caveat: string;
   finalModel: string;
@@ -99,6 +103,8 @@ export interface Manifest {
     mlbWide: boolean;
   };
   pitchGroups: Record<string, string>;
+  pitchFamilies: Record<string, string>;
+  pitchGroupFamilies: Record<string, string>;
   models: Record<ModelKey, string>;
   validationMetrics: Record<string, Metrics>;
   selection: {

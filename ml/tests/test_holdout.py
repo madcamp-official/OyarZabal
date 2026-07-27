@@ -9,6 +9,7 @@ from oyarzabal.holdout import (
     _registry,
     evaluation_sample_fingerprint,
     frozen_rows,
+    promotion_sample_is_prospective,
 )
 
 
@@ -96,6 +97,47 @@ def test_registry_reads_v6_reliability_metadata() -> None:
         _registry(json.loads(json.dumps(payload)))
 
 
+def test_registry_reads_v7_tiers_and_scale_multipliers() -> None:
+    payload = {
+        "schemaVersion": 6,
+        "dataCutoff": "2025-11-01",
+        "specialists": {
+            "10": {
+                "pitcherId": 10,
+                "enabled": True,
+                "specialistWeight": 0,
+                "model": "pooled-residual.pkl",
+                "dataCutoff": "2025-09-01",
+                "status": "limited",
+                "reliability": 0.2,
+                "scaleMultiplier": 0.4,
+                "stale": True,
+                "incrementalValidation": {"strict2025Passed": False},
+            },
+            "20": {
+                "pitcherId": 20,
+                "enabled": False,
+                "specialistWeight": 0,
+                "model": "",
+                "dataCutoff": "2025-09-01",
+                "status": "shadow",
+                "reliability": 0.1,
+                "scaleMultiplier": 0,
+                "stale": False,
+            },
+        },
+    }
+
+    registry = _registry(payload)
+
+    assert registry[10].status == "limited"
+    assert registry[10].scale_multiplier == 0.4
+    assert registry[10].stale is True
+    assert registry[10].incremental_validation["strict2025Passed"] is False
+    assert registry[20].enabled is False
+    assert registry[20].scale_multiplier == 0
+
+
 def test_v5_evaluation_cohort_is_frozen_and_sample_hash_ignores_row_order() -> None:
     assert COMPARISON_COHORT_ID == "v5-enabled-pitchers-v1"
     assert len(V5_EVALUATION_PITCHER_IDS) == 30
@@ -114,3 +156,11 @@ def test_v5_evaluation_cohort_is_frozen_and_sample_hash_ignores_row_order() -> N
     assert evaluation_sample_fingerprint(rows) == evaluation_sample_fingerprint(
         rows.iloc[::-1]
     )
+
+
+def test_only_post_cutoff_rows_are_prospective() -> None:
+    opened = pd.DataFrame({"game_date": pd.to_datetime(["2026-07-25"])})
+    future = pd.DataFrame({"game_date": pd.to_datetime(["2026-07-26"])})
+
+    assert promotion_sample_is_prospective(opened) is False
+    assert promotion_sample_is_prospective(future) is True

@@ -111,8 +111,16 @@ h1 em { color: transparent; font-style: normal; -webkit-text-stroke: 1px var(--a
 .recent { display: flex; align-items: center; gap: 8px; min-height: 28px; margin: -16px 0 24px; }
 .recent span, .recent small { color: var(--muted); font: 10px "IBM Plex Mono"; letter-spacing: .08em; }
 .recent i { min-width: 30px; padding: 4px 7px; color: var(--paper); background: #183027; font: normal 10px "IBM Plex Mono"; text-align: center; }
-.bars { display: grid; gap: 15px; }
+.bars { display: grid; gap: 26px; }
+.family-group { display: grid; gap: 10px; }
+.family-row { display: grid; grid-template-columns: 150px 1fr 48px; align-items: center; gap: 18px; }
+.family-row strong { color: var(--paper); font-size: 14px; }
+.family-row b { text-align: right; color: var(--acid); font: 600 14px "IBM Plex Mono"; }
+.family-row .track { height: 12px; }
+.family-row .track i { background: var(--acid); box-shadow: 0 0 20px rgba(183,245,42,.22); }
 .bar-row { display: grid; grid-template-columns: 150px 1fr 48px; align-items: center; gap: 18px; color: var(--muted); font-size: 13px; }
+.bar-row > span { padding-left: 16px; }
+.bar-row small { margin-left: 8px; color: var(--acid); font: 8px "IBM Plex Mono"; }
 .bar-row b { text-align: right; font: 13px "IBM Plex Mono"; }
 .track { height: 9px; background: #14251f; overflow: hidden; }
 .track i { display: block; height: 100%; background: #50655d; transition: width .35s; }
@@ -125,6 +133,7 @@ h1 em { color: transparent; font-style: normal; -webkit-text-stroke: 1px var(--a
 .reveal strong { display: block; margin: 3px 0; font-size: 28px; }
 .verdict { color: var(--orange); font-weight: 700; }
 .verdict.correct { color: var(--acid); }
+.verdict.family { color: #f4c95d; }
 .explain { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 26px 0 0; padding: 0; list-style: none; }
 .explain li { color: var(--muted); font-size: 12px; line-height: 1.65; padding-left: 15px; border-left: 1px solid var(--line); }
 
@@ -136,6 +145,8 @@ h1 em { color: transparent; font-style: normal; -webkit-text-stroke: 1px var(--a
 .controls span, .controls strong { display: block; }
 .controls span { color: var(--muted); font: 10px "IBM Plex Mono"; }
 .controls strong { margin-top: 3px; color: var(--acid); font: 20px "IBM Plex Mono"; }
+.controls .running-metrics { display: grid; grid-template-columns: repeat(3, auto); column-gap: 18px; }
+.controls .running-metrics strong { grid-row: 2; }
 
 .metrics { margin-top: 120px; padding: clamp(28px, 5vw, 64px); }
 .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); }
@@ -176,7 +187,7 @@ footer { display: flex; justify-content: space-between; padding: 72px 0 36px; co
   .matchup { grid-template-columns: 1fr; gap: 28px; padding: 52px 0; }
   .matchup .batter { text-align: left; }
   .versus { display: none; }
-  .bar-row { grid-template-columns: 90px 1fr 40px; gap: 9px; }
+  .family-row, .bar-row { grid-template-columns: 90px 1fr 40px; gap: 9px; }
   .tabs { overflow-x: auto; }
   .tabs button { white-space: nowrap; margin-right: 8px; }
   .explain, .metric-grid { grid-template-columns: 1fr; }

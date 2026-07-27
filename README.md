@@ -11,7 +11,8 @@
 - 검증을 통과한 투수의 pooled contextual residual과 Global 결합
 
 실제 구종은 사용자가 `실제 투구 공개`를 누르기 전까지 숨겨지며, 경기 종료 후
-Accuracy, Top-3 Accuracy, Macro F1, Log Loss를 비교합니다.
+Exact·Family·Hierarchical Accuracy, Top-3 Accuracy, Macro F1, Log Loss를
+비교합니다. 확률은 3개 계열 아래 기존 6개 세부 구종으로 표시합니다.
 
 ## 구조
 
@@ -34,7 +35,14 @@ uv run oyarzabal-train-hybrid
 uv run oyarzabal-fetch-statcast \
   --start 2026-03-25 --end 2026-07-26 \
   --output data/holdout/statcast-2026
-uv run oyarzabal-evaluate-holdout --models models/v6
+uv run oyarzabal-evaluate-holdout \
+  --models models/v7 \
+  --reference-models models/hybrid
+# prospective 승격 평가는 공개된 회귀 진단 구간을 제외한다.
+uv run oyarzabal-evaluate-holdout \
+  --models models/v7 \
+  --reference-models models/hybrid \
+  --start 2026-07-26
 uv run oyarzabal-build-demo \
   --history data/raw/statcast \
   --game /path/to/game.parquet \
@@ -43,13 +51,15 @@ uv run pytest -q
 ```
 
 수집은 `data/raw/statcast`의 월별 Parquet로 재개할 수 있습니다. 학습 모델은
-`models/v6`, 정적 JSON은 `web/public/data`, 실행 기록은
+`models/v7`, 정적 JSON은 `web/public/data`, 실행 기록은
 `artifacts/runs/<run-id>`에 저장합니다.
 2026 홀드아웃 평가는 2025년 말까지 학습한 모델만 허용하며, 학습 폴더나
 registry에서 2026 데이터가 감지되면 중단합니다.
 버전 간 개인화 비교는 V5 활성 선수 30명을 동결한
 `v5-enabled-pitchers-v1` cohort를 자동으로 사용합니다. 같은 benchmark의
 정확한 투구가 달라지면 row fingerprint 검사에서 평가가 중단됩니다.
+V7 Registry는 선수를 `full / limited / shadow`로 나누며, prospective 승격
+전까지 제품 배포 상태는 shadow입니다.
 
 ## Codex Worktree
 

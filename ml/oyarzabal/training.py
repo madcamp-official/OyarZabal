@@ -1,4 +1,4 @@
-"""Train the frozen Global model and V6 reliability-gated residual."""
+"""Train the frozen Global model and V7 incremental residual registry."""
 
 from __future__ import annotations
 
@@ -47,7 +47,12 @@ from .residual import (
     train_residual_with_tuning,
 )
 from .resources import assert_safe, snapshot
-from .taxonomy import PITCH_GROUPS
+from .taxonomy import (
+    PITCH_GROUP_FAMILY_LABELS,
+    PITCH_GROUPS,
+    family_names,
+    group_families,
+)
 
 PILOT_PITCHERS = {
     543037: "Gerrit Cole",
@@ -128,6 +133,7 @@ def _metrics(actual: np.ndarray, probabilities: np.ndarray) -> dict[str, object]
         probabilities,
         labels=range(len(PITCH_GROUPS)),
         names=[str(group) for group in PITCH_GROUPS],
+        family_labels=PITCH_GROUP_FAMILY_LABELS,
     )
 
 
@@ -159,6 +165,8 @@ def _calibration_passes(
         candidate_metrics["logLoss"] < global_metrics["logLoss"]
         and candidate_metrics["accuracy"] >= global_metrics["accuracy"] - 0.005
         and candidate_metrics["macroF1"] >= global_metrics["macroF1"] - 0.005
+        and candidate_metrics["hierarchicalAccuracy"]
+        >= global_metrics["hierarchicalAccuracy"] - 0.005
         and not major_zero_recall
         and candidate_metrics["totalVariationDistance"]
         <= global_metrics["totalVariationDistance"]
@@ -265,7 +273,7 @@ def _routing_registry(
             enabled=True,
             specialist_weight=0,
             model="pooled-residual.pkl",
-            status="active",
+            status="full",
             reliability=float(values["reliability"]),
             reliability_components=values,
         )
@@ -631,8 +639,9 @@ def train_hybrid(
         np.concatenate([reference_2024, reference_2025]),
     )
     validations: dict[str, object] = {}
-    active_ids: set[int] = set()
-    provisional_ids: set[int] = set()
+    tiers: dict[int, str] = {}
+    scale_multipliers: dict[int, float] = {}
+    stale_ids: set[int] = set()
     recommended_tiers: Counter[str] = Counter()
     for pitcher_id in pool:
         positions_2024 = np.flatnonzero(
@@ -665,10 +674,6 @@ def train_hybrid(
             test_passed = False
             test_global = None
             test_candidate = None
-        if aggregate_passed and validation_passed and test_passed:
-            active_ids.add(pitcher_id)
-        elif aggregate_passed and validation_passed and not len(positions_2025):
-            provisional_ids.add(pitcher_id)
         safe_2024 = _safe_scale_analysis(
             evaluation_rows_2024["target"].to_numpy(),
             evaluation_global_2024,
@@ -685,16 +690,31 @@ def train_hybrid(
             positions_2025,
             min_support=MIN_2025_EVALUATION_PITCHES,
         )
+        safe_multiplier_2024 = float(safe_2024["maxSafeMultiplier"])
+        safe_multiplier_2025 = float(safe_2025["maxSafeMultiplier"])
         conservative_multiplier = min(
-            float(safe_2024["maxSafeMultiplier"]),
-            float(safe_2025["maxSafeMultiplier"]),
+            safe_multiplier_2024,
+            safe_multiplier_2025,
         )
         if aggregate_passed and validation_passed and test_passed:
             recommended_tier = "full"
+            registry_multiplier = 1.0
         elif aggregate_passed and conservative_multiplier > 0:
             recommended_tier = "limited"
+            registry_multiplier = conservative_multiplier
+        elif (
+            aggregate_passed
+            and not len(positions_2025)
+            and safe_multiplier_2024 > 0
+        ):
+            recommended_tier = "limited"
+            registry_multiplier = safe_multiplier_2024
+            stale_ids.add(pitcher_id)
         else:
             recommended_tier = "shadow"
+            registry_multiplier = 0.0
+        tiers[pitcher_id] = recommended_tier
+        scale_multipliers[pitcher_id] = registry_multiplier
         recommended_tiers[recommended_tier] += 1
         validations[str(pitcher_id)] = {
             "pitcherId": pitcher_id,
@@ -716,6 +736,8 @@ def train_hybrid(
                 "2025": safe_2025,
                 "conservativeMultiplier": conservative_multiplier,
                 "recommendedTier": recommended_tier,
+                "registryMultiplier": registry_multiplier,
+                "stale": pitcher_id in stale_ids,
             },
         }
 
@@ -724,14 +746,16 @@ def train_hybrid(
         record = validations[str(pitcher_id)]
         support_2024 = int(record["support"]["2024Evaluation"])
         support_2025 = int(record["support"]["2025"])
-        if pitcher_id in active_ids:
-            status = "active"
+        status = tiers[pitcher_id]
+        if status == "full":
             reason = None
-        elif pitcher_id in provisional_ids:
-            status = "provisional"
-            reason = "missing_2025_rows"
+        elif status == "limited":
+            reason = (
+                "stale_latest_season"
+                if pitcher_id in stale_ids
+                else "incremental_gate_only"
+            )
         else:
-            status = "shadow"
             reason = _reason(
                 aggregate_passed=aggregate_passed,
                 support_2024=support_2024,
@@ -751,7 +775,8 @@ def train_hybrid(
                 "recentSupport": 0,
             },
         )
-        enabled = status in {"active", "provisional"}
+        enabled = status in {"full", "limited"}
+        safe_scale = record["safeScale"]
         registry[pitcher_id] = RegistryEntry(
             pitcher_id=pitcher_id,
             enabled=enabled,
@@ -759,13 +784,33 @@ def train_hybrid(
             model="pooled-residual.pkl" if enabled else "",
             data_cutoff=pitcher_rows["game_date"].max().date().isoformat(),
             reason=reason,
-            spec="v6-reliability-gated-residual" if enabled else None,
+            spec="v7-incremental-residual" if enabled else None,
             status=status,
             reliability=float(reliability["reliability"]),
             reliability_components=reliability,
             support={
                 "2024Evaluation": support_2024,
                 "2025": support_2025,
+            },
+            scale_multiplier=scale_multipliers[pitcher_id],
+            stale=pitcher_id in stale_ids,
+            incremental_validation={
+                "2024": {
+                    "support": safe_scale["2024"]["support"],
+                    "maxSafeMultiplier": safe_scale["2024"][
+                        "maxSafeMultiplier"
+                    ],
+                    "failureReasons": safe_scale["2024"]["failureReasons"],
+                },
+                "2025": {
+                    "support": safe_scale["2025"]["support"],
+                    "maxSafeMultiplier": safe_scale["2025"][
+                        "maxSafeMultiplier"
+                    ],
+                    "failureReasons": safe_scale["2025"]["failureReasons"],
+                },
+                "strict2024Passed": bool(record["validationPassed"]),
+                "strict2025Passed": bool(record["testPassed"]),
             },
         )
 
@@ -819,8 +864,12 @@ def train_hybrid(
     gc.collect()
 
     result = {
-        "schemaVersion": 5,
+        "schemaVersion": 6,
+        "modelVersion": "V7",
+        "deploymentStatus": "shadow",
         "pitchGroups": [str(group) for group in PITCH_GROUPS],
+        "pitchFamilies": family_names(),
+        "pitchGroupFamilies": group_families(),
         "generatedAt": datetime.now(UTC).isoformat(),
         "dataCutoff": rows["game_date"].max().date().isoformat(),
         "rows": len(rows),
@@ -852,7 +901,8 @@ def train_hybrid(
             "treeCount": residual_tree_count,
             "referenceScale": 0.5,
             "formula": (
-                "0.5 * n/(n+1000) * min(pAll,pRecent) * contextGate"
+                "0.5 * n/(n+1000) * min(pAll,pRecent) * contextGate "
+                "* registryScaleMultiplier"
             ),
             "recentDays": 90,
             "bootstrapSamples": 500,
@@ -864,17 +914,20 @@ def train_hybrid(
             "testGlobalMetrics": aggregate_2025_global,
             "testMetrics": aggregate_2025_candidate,
             "testPassed": aggregate_2025_passed,
-            "activeCount": len(active_ids),
-            "provisionalCount": len(provisional_ids),
-            "shadowCount": len(pool) - len(active_ids) - len(provisional_ids),
+            "fullCount": recommended_tiers["full"],
+            "limitedCount": recommended_tiers["limited"],
+            "shadowCount": recommended_tiers["shadow"],
+            "enabledCount": (
+                recommended_tiers["full"] + recommended_tiers["limited"]
+            ),
             "safeScaleAnalysis": {
                 "method": (
-                    "largest 0.05-step multiplier of existing per-pitch V6 "
+                    "largest 0.05-step multiplier of per-pitch V7 "
                     "scale that improves log loss without new relative harm"
                 ),
                 "selectionYears": [2024, 2025],
                 "recommendedCounts": dict(sorted(recommended_tiers.items())),
-                "productionRoutingChanged": False,
+                "productionRoutingChanged": True,
             },
             "routing2024": _routing_summary(routing_2024),
             "routing2025": _routing_summary(routing_2025),
@@ -882,7 +935,7 @@ def train_hybrid(
         "gate": {
             "model": "context-gate.pkl",
             "objective": "binary:logistic",
-            "target": "reference_log_probability_gain_gt_zero",
+            "target": "global_to_reference_log_probability_gain_gt_zero",
             "treeCount": gate_tree_count,
             "identityFeatures": False,
             "trainingYears": [2024, 2025],
@@ -905,7 +958,7 @@ def train_hybrid(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, default=Path("data/raw/statcast"))
-    parser.add_argument("--models", type=Path, default=Path("models/v6"))
+    parser.add_argument("--models", type=Path, default=Path("models/v7"))
     parser.add_argument("--runs", type=Path, default=Path("artifacts/runs"))
     args = parser.parse_args()
     run = args.runs / datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")

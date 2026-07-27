@@ -1,3 +1,5 @@
+from datetime import date
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -118,6 +120,8 @@ def test_registry_serialization_uses_public_schema_names() -> None:
         "2025-12-31",
         reliability=0.2,
         reliability_components={"n": 1_000, "pAll": 0.7, "pRecent": 0.6},
+        status="limited",
+        scale_multiplier=0.4,
     )
     payload = serialize_registry_entry(entry, name="Pitcher")
     assert payload["pitcherId"] == 10
@@ -125,6 +129,8 @@ def test_registry_serialization_uses_public_schema_names() -> None:
     assert payload["specialistWeight"] == 0.75
     assert payload["reliability"] == 0.2
     assert payload["reliabilityComponents"]["pRecent"] == 0.6
+    assert payload["status"] == "limited"
+    assert payload["scaleMultiplier"] == 0.4
     assert "pitcher_id" not in payload
 
 
@@ -239,38 +245,105 @@ def test_pooled_residual_routes_only_enabled_pitchers() -> None:
 def test_reliability_router_exposes_scale_components_and_fallbacks() -> None:
     rows = pd.DataFrame(
         {
-            "pitcher_id": [10, 20],
-            "count_support": [30, 30],
-            "stand_support": [30, 30],
-            "transition_support": [30, 30],
-            "pa_prev_pitch_1": ["FOUR_SEAM", "FOUR_SEAM"],
+            "pitcher_id": [10, 20, 30],
+            "count_support": [30, 30, 30],
+            "stand_support": [30, 30, 30],
+            "transition_support": [30, 30, 30],
+            "pa_prev_pitch_1": ["FOUR_SEAM", "FOUR_SEAM", "FOUR_SEAM"],
         }
     )
-    global_probabilities = np.full((2, 6), 1 / 6)
-    correction = np.array([[2, -2, 0, 0, 0, 0], [2, -2, 0, 0, 0, 0]])
+    global_probabilities = np.full((3, 6), 1 / 6)
+    correction = np.tile([2, -2, 0, 0, 0, 0], (3, 1))
     registry = {
         10: RegistryEntry(
             pitcher_id=10,
             enabled=True,
             specialist_weight=0,
             model="pooled-residual.pkl",
-            status="active",
+            status="full",
             reliability=0.4,
-        )
+        ),
+        20: RegistryEntry(
+            pitcher_id=20,
+            enabled=True,
+            specialist_weight=0,
+            model="pooled-residual.pkl",
+            status="limited",
+            reliability=0.4,
+            scale_multiplier=0.25,
+        ),
+        30: RegistryEntry(
+            pitcher_id=30,
+            enabled=False,
+            specialist_weight=0,
+            model="",
+            status="shadow",
+            reliability=0.4,
+            scale_multiplier=0,
+        ),
     }
 
     adjusted, sources, routing = apply_reliability_gated_residual(
         rows,
         global_probabilities,
         correction,
-        np.array([0.5, 0.5]),
+        np.array([0.5, 0.5, 0.5]),
         registry,
     )
 
     assert adjusted[0, 0] > global_probabilities[0, 0]
-    assert adjusted[1] == pytest.approx(global_probabilities[1])
-    assert sources == ["reliability-gated-residual", "global"]
+    assert adjusted[1, 0] > global_probabilities[1, 0]
+    assert adjusted[1, 0] < adjusted[0, 0]
+    assert adjusted[2] == pytest.approx(global_probabilities[2])
+    assert sources == [
+        "reliability-gated-residual",
+        "reliability-gated-residual",
+        "global",
+    ]
     assert routing[0]["pitcherReliability"] == 0.4
     assert routing[0]["contextGate"] == 0.5
     assert routing[0]["effectiveScale"] == pytest.approx(0.2)
-    assert routing[1]["hardGateReason"] == "registry_inactive"
+    assert routing[0]["registryTier"] == "full"
+    assert routing[1]["effectiveScale"] == pytest.approx(0.05)
+    assert routing[1]["registryTier"] == "limited"
+    assert routing[1]["scaleMultiplier"] == 0.25
+    assert routing[2]["hardGateReason"] == "registry_inactive"
+    assert routing[2]["registryTier"] == "shadow"
+
+
+def test_stale_limited_pitcher_uses_existing_decay() -> None:
+    rows = pd.DataFrame(
+        {
+            "pitcher_id": [10],
+            "count_support": [30],
+            "stand_support": [30],
+            "transition_support": [30],
+            "pa_prev_pitch_1": ["FOUR_SEAM"],
+        }
+    )
+    global_probabilities = np.full((1, 6), 1 / 6)
+    registry = {
+        10: RegistryEntry(
+            pitcher_id=10,
+            enabled=True,
+            specialist_weight=0,
+            model="pooled-residual.pkl",
+            data_cutoff="2025-01-01",
+            status="limited",
+            reliability=0.4,
+            scale_multiplier=0.5,
+            stale=True,
+        )
+    }
+
+    _, _, routing = apply_reliability_gated_residual(
+        rows,
+        global_probabilities,
+        np.array([[2, -2, 0, 0, 0, 0]]),
+        np.array([1.0]),
+        registry,
+        prediction_dates=[date(2026, 1, 1)],
+    )
+
+    assert routing[0]["pitcherReliability"] == pytest.approx(0.075, abs=1e-4)
+    assert routing[0]["effectiveScale"] == pytest.approx(0.0375, abs=1e-4)

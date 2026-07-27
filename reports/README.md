@@ -6,14 +6,13 @@
 버전 우위로 해석하지 않는다.
 
 > [!IMPORTANT]
-> **현재 결론:** V6는 class-wise calibration과 reliability-gated residual을
-> 적용해 2025 후향 검증을 통과했다. 그러나 V5의 30명·28,734구 고정
-> 개인화 cohort에서는 V5보다 낮아 shadow를 유지한다.
+> **현재 결론:** V7은 6종 아래 3개 계열과 증분 `full / limited / shadow`
+> Registry를 적용했다. full·limited는 자체 Global보다 개선됐지만 V5의
+> 30명·28,734구 고정 cohort에서는 Log Loss가 0.0019 나빠 prospective
+> 평가 전까지 shadow를 유지한다.
 
-V6의 엄격한 선수 게이트를 3단계 Registry로 완화할 수 있는지는
-[안전 scale 분석](2026-07-27-v6-safe-scale-registry.md)에 별도로 정리했다.
-후향 분석상 `full 10명 / limited 39명 / shadow 49명`이며 운영 라우팅은
-아직 변경하지 않았다.
+V7의 실제 Registry와 계층형 지표 결과는
+[V7 리포트](2026-07-27-v7-hierarchical-incremental.md)에 정리했다.
 
 ## 모델 진화 흐름
 
@@ -25,7 +24,8 @@ flowchart TD
     V4["V4 · pooled residual<br/>active 25명 + provisional 5명"]
     V5["V5 · V4 구조의 2026 외부 검증<br/>전체 +0.11%p · 적용 범위 +1.83%p"]
     V6["V6 · Reliability Gate<br/>고정 cohort에서 V5 열세 · shadow"]
-    V1 --> V2 --> V3 --> V4 --> V5 --> V6
+    V7["V7 · 계층 평가 + 증분 Registry<br/>full 10 · limited 40 · shadow 48"]
+    V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7
 ```
 
 ## 버전 요약
@@ -38,6 +38,7 @@ flowchart TD
 | [V4](2026-07-27-pooled-residual.md) | pooled residual | 2025 **98명 내부 pool** 189,721구 | 45.08% → **46.48%** | 43.46% → **43.57%** | 1.2237 → **1.2054** | 전체 MLB 점수 아님 |
 | [V5](2026-07-27-frozen-holdout.md) | **V4 구조 외부 검증** | 2026 **MLB 전체 동일 표본** 459,530구 | 47.62% → **47.73%** | 46.47% → **46.50%** | 1.1452 → **1.1437** | 제품 단위 개선 확인 |
 | [V6](2026-07-27-v6-reliability-gate.md) | Calibration + reliability gate | 2026 **V5 고정 30명** 28,734구 | **45.96%** → 45.55% | **42.01%** → 41.68% | **1.2422** → 1.2475 | V5 대비 열세 · Shadow |
+| [V7](2026-07-27-v7-hierarchical-incremental.md) | 계층 지표 + 증분 Registry | 2026 **V5 고정 30명** 28,734구 | **45.96%** → 45.80% | **42.01%** → 41.69% | **1.2422** → 1.2441 | limited 검증 · Shadow |
 
 V1과 V2는 포심·싱커·커터·슬라이더·커브·체인지업 taxonomy다. V3 이후는
 포심·무빙 패스트볼·슬라이더 계열·커브 계열·체인지업·스플리터/포크
@@ -84,7 +85,7 @@ residual 적용 범위가 작은 효과를 그대로 반영한다.
 | V4 Global ↔ Residual | 가능 | 같은 투구에 두 모델을 적용 |
 | V5 Global ↔ Final | 가능 | 같은 2026 동결 holdout에 적용 |
 | V5 ↔ V6 공개 2026 | 성능 회귀 진단만 | 같은 고정 cohort지만 V6 설계 전에 이미 결과를 열어 독립 승격 근거가 아님 |
-| V5 ↔ V6 2026-07-26 이후 | 가능 | 사전 고정한 prospective 조건 충족 후 첫 평가만 사용 |
+| V5 ↔ V6/V7 2026-07-26 이후 | 가능 | 사전 고정한 prospective 조건 충족 후 첫 평가만 사용 |
 
 ## 통일된 평가 표본
 

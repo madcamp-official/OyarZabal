@@ -1,9 +1,16 @@
 import pytest
 from oyarzabal.taxonomy import (
+    PITCH_FAMILIES,
+    PITCH_GROUP_FAMILIES,
+    PITCH_GROUP_FAMILY_LABELS,
     PITCH_GROUPS,
     UNSUPPORTED_CONTEXT,
+    PitchFamily,
     PitchGroup,
     context_pitch,
+    family_for_group,
+    family_names,
+    group_families,
     group_pitch,
     normalize_group_probabilities,
 )
@@ -26,6 +33,21 @@ def test_pitch_codes_are_grouped_and_exclusions_are_dropped() -> None:
     assert context_pitch("AB") is None
     assert group_pitch(None) is None
     assert len(PITCH_GROUPS) == 6
+
+
+def test_pitch_groups_form_three_two_child_families() -> None:
+    assert PITCH_FAMILIES == (
+        PitchFamily.FASTBALL,
+        PitchFamily.BREAKING,
+        PitchFamily.OFFSPEED,
+    )
+    assert family_for_group(PitchGroup.FOUR_SEAM) is PitchFamily.FASTBALL
+    assert family_for_group("CURVE") is PitchFamily.BREAKING
+    assert family_for_group(PitchGroup.SPLITTER_FORK) is PitchFamily.OFFSPEED
+    assert tuple(PITCH_GROUP_FAMILIES) == PITCH_GROUPS
+    assert PITCH_GROUP_FAMILY_LABELS == (0, 0, 1, 1, 2, 2)
+    assert set(family_names()) == {str(family) for family in PITCH_FAMILIES}
+    assert group_families()["CHANGEUP"] == "OFFSPEED"
 
 
 def test_raw_probabilities_merge_to_fixed_target_space() -> None:

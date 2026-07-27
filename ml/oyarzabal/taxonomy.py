@@ -16,7 +16,14 @@ class PitchGroup(StrEnum):
     SPLITTER_FORK = "SPLITTER_FORK"
 
 
+class PitchFamily(StrEnum):
+    FASTBALL = "FASTBALL"
+    BREAKING = "BREAKING"
+    OFFSPEED = "OFFSPEED"
+
+
 PITCH_GROUPS = tuple(PitchGroup)
+PITCH_FAMILIES = tuple(PitchFamily)
 
 PITCH_GROUP_NAMES: dict[PitchGroup, str] = {
     PitchGroup.FOUR_SEAM: "포심",
@@ -26,6 +33,24 @@ PITCH_GROUP_NAMES: dict[PitchGroup, str] = {
     PitchGroup.CHANGEUP: "체인지업",
     PitchGroup.SPLITTER_FORK: "스플리터·포크",
 }
+
+PITCH_FAMILY_NAMES: dict[PitchFamily, str] = {
+    PitchFamily.FASTBALL: "패스트볼 계열",
+    PitchFamily.BREAKING: "브레이킹볼 계열",
+    PitchFamily.OFFSPEED: "오프스피드 계열",
+}
+
+PITCH_GROUP_FAMILIES: dict[PitchGroup, PitchFamily] = {
+    PitchGroup.FOUR_SEAM: PitchFamily.FASTBALL,
+    PitchGroup.MOVING_FASTBALL: PitchFamily.FASTBALL,
+    PitchGroup.SLIDER: PitchFamily.BREAKING,
+    PitchGroup.CURVE: PitchFamily.BREAKING,
+    PitchGroup.CHANGEUP: PitchFamily.OFFSPEED,
+    PitchGroup.SPLITTER_FORK: PitchFamily.OFFSPEED,
+}
+PITCH_GROUP_FAMILY_LABELS = tuple(
+    PITCH_FAMILIES.index(PITCH_GROUP_FAMILIES[group]) for group in PITCH_GROUPS
+)
 
 _CODE_TO_GROUP: dict[str, PitchGroup] = {
     "FF": PitchGroup.FOUR_SEAM,
@@ -99,3 +124,18 @@ def serialize_probabilities(
     if total <= 0:
         raise ValueError("probability distribution has zero mass")
     return {group: value / total for group, value in values.items()}
+
+
+def family_for_group(group: PitchGroup | str) -> PitchFamily:
+    return PITCH_GROUP_FAMILIES[PitchGroup(group)]
+
+
+def family_names() -> dict[str, str]:
+    return {str(family): name for family, name in PITCH_FAMILY_NAMES.items()}
+
+
+def group_families() -> dict[str, str]:
+    return {
+        str(group): str(family)
+        for group, family in PITCH_GROUP_FAMILIES.items()
+    }
