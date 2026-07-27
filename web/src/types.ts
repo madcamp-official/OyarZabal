@@ -91,7 +91,8 @@ export interface Game {
 }
 
 export interface Manifest {
-  schemaVersion: 7;
+  schemaVersion: 8;
+  decisionRule: "family-sum-then-child";
   generatedAt: string;
   caveat: string;
   finalModel: string;

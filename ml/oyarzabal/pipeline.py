@@ -23,7 +23,7 @@ from .hybrid import (
     serialize_registry_entry,
     specialist_eligibility,
 )
-from .metrics import evaluate_diagnostics
+from .metrics import evaluate_diagnostics, hierarchical_top_indices
 from .modeling import (
     apply_temperature,
     fit_temperature,
@@ -137,7 +137,13 @@ def _prediction(probabilities: np.ndarray) -> dict[str, object]:
         str(group): round(float(probability), 6)
         for group, probability in zip(PITCH_GROUPS, probabilities, strict=True)
     }
-    top = str(PITCH_GROUPS[int(np.argmax(probabilities))])
+    top_index = int(
+        hierarchical_top_indices(
+            np.asarray(probabilities)[None, :],
+            PITCH_GROUP_FAMILY_LABELS,
+        )[0]
+    )
+    top = str(PITCH_GROUPS[top_index])
     return {
         "topPitch": top,
         "confidence": values[top],
@@ -175,7 +181,7 @@ def _build_game(
         history = recent.setdefault(plate_appearance, [])
         actual_group = str(row.target_group)
         count = f"{int(row.balls)}-{int(row.strikes)}"
-        xgb_top = str(PITCH_GROUPS[int(np.argmax(probabilities["xgboost"][sequence]))])
+        xgb_top = _prediction(probabilities["xgboost"][sequence])["topPitch"]
         explanation = [
             f"{count} 카운트와 {int(row.outs_when_up)}아웃 상황을 반영했습니다.",
             (
@@ -700,7 +706,8 @@ def build_demo(args: argparse.Namespace) -> None:
     _atomic_json(game_path, game_artifact)
     validation_metrics = {}
     manifest = {
-        "schemaVersion": 7,
+        "schemaVersion": 8,
+        "decisionRule": "family-sum-then-child",
         "generatedAt": generated_at,
         "evaluationMode": "historical_showcase",
         "deploymentStatus": "shadow",

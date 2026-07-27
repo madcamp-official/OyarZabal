@@ -15,7 +15,7 @@ function useReplayData() {
         return response.json() as Promise<Manifest>;
       })
       .then(async (manifest) => {
-        if (manifest.schemaVersion !== 7) {
+        if (manifest.schemaVersion !== 8) {
           throw new Error("지원하지 않는 경기 데이터 버전입니다.");
         }
         const response = await fetch(manifest.games[0].path);

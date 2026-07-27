@@ -28,6 +28,28 @@ def validate_probability_matrix(probabilities: np.ndarray) -> np.ndarray:
     return values / totals[:, None]
 
 
+def hierarchical_top_indices(
+    probabilities: np.ndarray,
+    family_labels: Sequence[int],
+) -> np.ndarray:
+    """Choose the top family by summed mass, then its highest-probability child."""
+    values = validate_probability_matrix(probabilities)
+    families = np.asarray(family_labels)
+    if len(families) != values.shape[1]:
+        raise ValueError("family labels and probability columns differ in length")
+    family_values = list(dict.fromkeys(families.tolist()))
+    family_scores = np.column_stack(
+        [values[:, families == family].sum(axis=1) for family in family_values]
+    )
+    selected_families = np.asarray(family_values)[family_scores.argmax(axis=1)]
+    predicted = np.empty(len(values), dtype=int)
+    for family in family_values:
+        rows = np.flatnonzero(selected_families == family)
+        children = np.flatnonzero(families == family)
+        predicted[rows] = children[values[np.ix_(rows, children)].argmax(axis=1)]
+    return predicted
+
+
 def evaluate_probabilities(
     actual: Sequence[int],
     probabilities: np.ndarray,
@@ -58,7 +80,13 @@ def evaluate_probabilities(
             )
         return result
 
-    predicted = values.argmax(axis=1)
+    predicted_indices = (
+        hierarchical_top_indices(values, family_labels)
+        if family_labels is not None
+        else values.argmax(axis=1)
+    )
+    label_array = np.asarray(list(labels))
+    predicted = label_array[predicted_indices]
     top_k = min(3, values.shape[1])
     top_indices = np.argpartition(values, -top_k, axis=1)[:, -top_k:]
     top3 = float(
@@ -82,9 +110,7 @@ def evaluate_probabilities(
     if family_labels is not None:
         family_by_label = dict(zip(labels, family_labels, strict=True))
         actual_families = np.array([family_by_label[label] for label in y])
-        predicted_families = np.array(
-            [family_by_label[label] for label in predicted]
-        )
+        predicted_families = np.asarray(family_labels)[predicted_indices]
         family_accuracy = float(
             accuracy_score(actual_families, predicted_families)
         )
@@ -133,7 +159,12 @@ def evaluate_diagnostics(
             "zeroRecallClasses": [],
             "majorityPredictionGap": 0.0,
         }
-    predicted = values.argmax(axis=1)
+    predicted_indices = (
+        hierarchical_top_indices(values, family_labels)
+        if family_labels is not None
+        else values.argmax(axis=1)
+    )
+    predicted = np.asarray(label_values)[predicted_indices]
     precision, recall, f1, support = precision_recall_fscore_support(
         y,
         predicted,

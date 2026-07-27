@@ -99,7 +99,8 @@ def test_registry_reads_v6_reliability_metadata() -> None:
 
 def test_registry_reads_v7_tiers_and_scale_multipliers() -> None:
     payload = {
-        "schemaVersion": 6,
+        "schemaVersion": 7,
+        "decisionRule": "family-sum-then-child",
         "dataCutoff": "2025-11-01",
         "specialists": {
             "10": {

@@ -16,7 +16,8 @@ const prediction = {
   },
 };
 const manifest = {
-  schemaVersion: 7,
+  schemaVersion: 8,
+  decisionRule: "family-sum-then-child",
   generatedAt: "2026-07-24",
   caveat: "showcase",
   finalModel: "xgboost",

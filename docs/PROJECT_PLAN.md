@@ -15,10 +15,16 @@
 ```
 
 6종 모델과 label 순서는 유지한다. 계열 확률은 두 자식 확률의 합이며 별도
-모델을 학습하지 않는다. 공식 단일 예측은 계속 6종 Top-1이다.
+모델을 학습하지 않는다. 공식 예측은 다음 계층 decoder로 결정한다.
 
-- Exact Accuracy: 6종 Top-1 적중률
-- Family Accuracy: 6종 Top-1이 속한 계열 적중률
+```text
+계열별 두 자식 확률 합산
+→ 합산 확률 Top-1 계열 선택
+→ 선택한 계열 안에서 확률 Top-1 구종 선택
+```
+
+- Exact Accuracy: 계층 decoder가 선택한 세부 구종 적중률
+- Family Accuracy: 합산 확률 Top-1 계열 적중률
 - Hierarchical Accuracy: 세부 적중 1점, 계열만 적중 0.5점, 다른 계열 0점의
   평균. `(Exact Accuracy + Family Accuracy) / 2`와 같다.
 
@@ -76,11 +82,11 @@ effective scale =
 
 ## 산출물
 
-- Registry schema v6: tier, multiplier, 연도별 안전 배율, reliability,
+- Registry schema v7: 판정 규칙, tier, multiplier, 연도별 안전 배율, reliability,
   증분 지표와 실패 사유
-- Holdout schema v4: Exact·Family·Hierarchical, 전체·고정 cohort·tier·선수·
+- Holdout schema v5: Exact·Family·Hierarchical, 전체·고정 cohort·tier·선수·
   월별 지표와 bootstrap CI
-- Replay schema v7: 계열 매핑, 세 지표, tier, multiplier, effective scale과
+- Replay schema v8: 계열 매핑, 세 지표, tier, multiplier, effective scale과
   cap/fallback 사유
 - UI: 3개 부모 계열 아래 6개 확률 막대, 세부 Top-1 배지, 공개 후
   `정확한 구종 / 계열 적중 / 다른 계열` 판정

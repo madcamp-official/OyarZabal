@@ -604,7 +604,8 @@ def evaluate_frozen_holdout(
         }
 
     return {
-        "schemaVersion": 4,
+        "schemaVersion": 5,
+        "decisionRule": "family-sum-then-child",
         "generatedAt": datetime.now(UTC).isoformat(),
         "trainingCutoff": str(registry_payload["dataCutoff"]),
         "holdoutStart": rows["game_date"].min().date().isoformat(),
