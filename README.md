@@ -19,6 +19,7 @@ Accuracy, Top-3 Accuracy, Macro F1, Log Loss를 비교합니다.
 ml/       데이터·피처·모델·정적 산출물 파이프라인
 web/      Vite + React + TypeScript 리플레이 앱
 docs/     기획, 결정, 실험 기록
+reports/  주요 모델 버전별 성능 리포트와 현재 모델 진단
 artifacts 실행별 설정·지표·자원 기록
 ```
 
@@ -74,4 +75,5 @@ npm test
 npm run build
 ```
 
-상세 기획은 [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md)를 참고하세요.
+상세 기획은 [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md), 모델 버전별 성능과
+현재 진단은 [reports/README.md](reports/README.md)를 참고하세요.
