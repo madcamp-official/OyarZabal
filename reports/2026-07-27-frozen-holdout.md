@@ -38,6 +38,14 @@ shard를 별도 디렉터리에 격리했다. 학습 폴더나 registry에 2026 
 | 98명 registry pool | 90,145 | 44.10% | 44.68% | +0.58%p |
 | active/provisional | 28,734 | 44.15% | 45.97% | +1.83%p |
 
+```mermaid
+xychart-beta
+    title "2026 Global 대비 Final Accuracy"
+    x-axis ["전체 Global", "전체 Final", "Pool Global", "Pool Final", "Active Global", "Active Final"]
+    y-axis "Accuracy (%)" 43 --> 49
+    bar [47.62, 47.73, 44.10, 44.68, 44.15, 45.97]
+```
+
 라우팅은 Global 430,796구, active pooled residual 27,796구, provisional
 residual 938구였다. 즉 residual이 실제 개입한 비율은 6.25%다.
 
@@ -51,6 +59,14 @@ residual 938구였다. 즉 residual이 실제 개입한 비율은 6.25%다.
 | 커브 계열 | 8.13% | 10.33% | 42.08% | 37.07% |
 | 체인지업 | 11.14% | 16.88% | 56.73% | 45.11% |
 | 스플리터/포크 | 3.31% | 7.69% | 80.80% | 48.64% |
+
+```mermaid
+xychart-beta
+    title "2026 실제 대비 최종 예측 구종 비율"
+    x-axis ["FF 실", "FF 예", "무빙 실", "무빙 예", "SL 실", "SL 예", "CU 실", "CU 예", "CH 실", "CH 예", "FS 실", "FS 예"]
+    y-axis "비율 (%)" 0 --> 35
+    bar [30.60, 21.31, 24.60, 24.72, 22.21, 19.08, 8.13, 10.33, 11.14, 16.88, 3.31, 7.69]
+```
 
 ## 5. 해석
 

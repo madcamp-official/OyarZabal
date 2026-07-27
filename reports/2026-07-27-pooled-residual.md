@@ -40,6 +40,14 @@
 | Global | 45.08% | 89.99% | 43.46% | 1.2237 |
 | Residual | 46.48% | 90.37% | 43.57% | 1.2054 |
 
+```mermaid
+xychart-beta
+    title "Pooled residual Accuracy"
+    x-axis ["2024 Global", "2024 Residual", "2025 Global", "2025 Residual"]
+    y-axis "Accuracy (%)" 44 --> 47
+    bar [45.57, 46.46, 45.08, 46.48]
+```
+
 2025에서 Accuracy는 1.40%p, Log Loss는 0.0182 개선됐다. 2024 Macro F1은
 0.17%p 하락했지만 당시 허용 범위 0.5%p 안이었다.
 
@@ -62,8 +70,7 @@ pool 전체와 2025 게이트에서는 residual의 Accuracy와 Log Loss가 모�
 
 다만 aggregate 통과가 각 투수의 구종 분포가 안전하다는 뜻은 아니다. 선수별
 게이트에는 Log Loss, Accuracy 비열화, 주요 구종 zero recall만 있고 분포 오차와
-Macro F1 비열화 조건은 없다. 이 구조적 빈틈은
-[`CURRENT_MODEL_REVIEW.md`](CURRENT_MODEL_REVIEW.md)에서 별도로 다룬다.
+Macro F1 비열화 조건은 없다.
 
 ## 6. 한계
 

@@ -41,6 +41,14 @@
 | Similarity | 53.75% | 93.16% | 37.64% | 1.0732 |
 | 단순 prior | 50.81% | 90.55% | 34.14% | 1.2524 |
 
+```mermaid
+xychart-beta
+    title "307구 쇼케이스 Accuracy"
+    x-axis ["Final", "XGBoost", "Similarity", "Prior"]
+    y-axis "Accuracy (%)" 48 --> 55
+    bar [51.47, 51.47, 53.75, 50.81]
+```
+
 Similarity의 Accuracy는 높았지만 포심 예측 비율이 73.94%였고 커터·커브
 recall이 0이었다. Accuracy만으로 모델을 선택하면 쏠림 모델을 고를 수 있음을
 확인했다.

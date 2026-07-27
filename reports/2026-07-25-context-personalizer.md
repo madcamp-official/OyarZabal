@@ -40,6 +40,14 @@ Nestor Cortes는 2024 내부 검증을 통과했지만 2025에서 다음과 같�
 | Global | 44.81% | 23.76% | 1.1839 |
 | Personalizer | 43.32% | 23.68% | 1.1698 |
 
+```mermaid
+xychart-beta
+    title "Nestor Cortes 2025 Accuracy"
+    x-axis ["Global", "Personalizer"]
+    y-axis "Accuracy (%)" 40 --> 46
+    bar [44.81, 43.32]
+```
+
 확률 품질은 좋아졌지만 Top-1과 클래스 균형이 악화되어 비활성화했다.
 
 ### 307구 쇼케이스
