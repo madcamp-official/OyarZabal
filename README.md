@@ -30,6 +30,10 @@ Python 3.12와 [uv](https://docs.astral.sh/uv/)가 필요합니다.
 uv sync --extra dev
 uv run oyarzabal-fetch-statcast
 uv run oyarzabal-train-hybrid
+uv run oyarzabal-fetch-statcast \
+  --start 2026-03-25 --end 2026-07-26 \
+  --output data/holdout/statcast-2026
+uv run oyarzabal-evaluate-holdout
 uv run oyarzabal-build-demo \
   --history data/raw/statcast \
   --game /root/workspace/pitchpredict-smoke-test/data/cache/games/775300.parquet \
@@ -40,6 +44,8 @@ uv run pytest -q
 수집은 `data/raw/statcast`의 월별 Parquet로 재개할 수 있습니다. 학습 모델은
 `models/hybrid`, 정적 JSON은 `web/public/data`, 실행 기록은
 `artifacts/runs/<run-id>`에 저장합니다.
+2026 홀드아웃 평가는 2025년 말까지 학습한 모델만 허용하며, 학습 폴더나
+registry에서 2026 데이터가 감지되면 중단합니다.
 
 ## 웹앱
 
