@@ -81,3 +81,17 @@ TVD, 주요 구종 recall과 class probability calibration을 사용한다. 2024
 모든 모델의 개인화 성능을 이 선수들의 동일 기간·동일 투구에서 비교한다.
 모델별 active·registry pool은 운영 진단으로만 남긴다. 같은 benchmark를
 재평가할 때는 exact row fingerprint까지 일치해야 한다.
+
+## 2026-07-27 — 계층형 평가와 증분 Registry 도입
+
+6종 출력은 유지하고 포심·무빙 패스트볼, 슬라이더·커브, 체인지업·
+스플리터/포크를 각각 패스트볼·브레이킹볼·오프스피드 계열로 합산해 표시한다.
+공식 예측은 6종 Top-1을 유지하며 Exact 1점, 같은 계열 오답 0.5점, 다른 계열
+0점의 Hierarchical Accuracy를 보조 안전 지표로 추가한다.
+
+선수 개인화는 절대 기준만으로 켜고 끄지 않는다. 두 해의 엄격 조건을 통과하면
+full, 엄격 조건은 실패해도 같은 행의 Global보다 안전하게 개선되면 limited,
+최소 배율에서도 증분 조건을 실패하면 shadow로 둔다. 이 변경은 98명 pool의
+활용도를 높이되 Global이 이미 가진 오류를 residual에 중복 처벌하지 않기
+위한 것이다. V7은 공개된 2026 구간으로 승격하지 않고 prospective 평가 전까지
+shadow를 유지한다.

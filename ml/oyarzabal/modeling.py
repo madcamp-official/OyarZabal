@@ -27,7 +27,7 @@ from .features import (
 )
 from .metrics import evaluate_diagnostics, validate_probability_matrix
 from .resources import assert_safe, snapshot
-from .taxonomy import PITCH_GROUPS
+from .taxonomy import PITCH_GROUP_FAMILY_LABELS, PITCH_GROUPS
 
 
 @dataclass(frozen=True)
@@ -282,6 +282,7 @@ def run_oof_experiment(rows: pd.DataFrame) -> dict[str, object]:
             calibrated,
             labels=range(len(PITCH_GROUPS)),
             names=names,
+            family_labels=PITCH_GROUP_FAMILY_LABELS,
         )
         results.append(
             {
@@ -434,6 +435,8 @@ def _passes_balance_gates(
         float(candidate["logLoss"]) < float(reference["logLoss"])
         and float(candidate["macroF1"]) > float(reference["macroF1"])
         and float(candidate["accuracy"]) >= float(reference["accuracy"]) - 0.005
+        and float(candidate["hierarchicalAccuracy"])
+        >= float(reference["hierarchicalAccuracy"]) - 0.005
         and not candidate["zeroRecallClasses"]
         and float(candidate["majorityPredictionGap"]) <= 0.20
     )

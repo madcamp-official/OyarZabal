@@ -203,3 +203,28 @@ Git revision:
 - 이 배율은 2024·2025 후향 결과로 선택했으므로 배포 근거가 아니다.
   prospective 구간에서 고정 배율을 검증한 뒤에만 Registry 라우팅 승격을
   검토한다.
+
+## 2026-07-27 — V7 계층형 평가와 증분 Registry
+
+- 기존 6종 확률을 패스트볼·브레이킹볼·오프스피드 3계열로 합산하고 Exact,
+  Family, Hierarchical Accuracy를 학습·holdout·쇼케이스 전 구간에 추가했다.
+- 2022–2025 2,990,491구를 재학습한 실제 Registry는
+  `full 10 / limited 40 / shadow 48`이다. 기존 후향 분석보다 limited가 한 명
+  늘어난 것은 최신 시즌 표본이 없는 과거 안전 선수를 stale limited로
+  보존한 결과다.
+- 2025 98명 pool에서 V7은 Global 대비 Exact 46.39%→46.56%,
+  Family 54.74%→55.00%, Hierarchical 50.56%→50.78%, Log Loss
+  1.2077→1.2049로 개선했다.
+- 공개된 2026 MLB 전체 459,530구에서 V7 Final은 Exact 48.80%,
+  Family 57.37%, Hierarchical 53.08%, Log Loss 1.1287이었다.
+- 같은 고정 30명·28,734구에서 V7 Final은 V5 Final보다 Exact 0.16%p,
+  Hierarchical 0.14%p 낮고 Log Loss가 0.0019 나빴다. V7은 shadow를
+  유지한다.
+- full 10명과 limited 40명은 공개 2026 tier 진단에서 모두 자체 Global보다
+  Log Loss와 Hierarchical Accuracy를 개선했다. shadow 48명은 최종 확률이
+  Global과 완전히 같았다.
+- 307구 쇼케이스는 Exact 53.09%, Family 61.89%, Hierarchical 57.49%,
+  Log Loss 0.9896을 기록했다. residual은 full 90구, limited 10구에 적용됐다.
+- 첫 holdout 실행에서 평가 행이 0개인 stale 선수가 발생해 sklearn 진단이
+  중단됐다. 공용 지표 함수가 빈 평가 slice를 0 support로 반환하도록 수정하고
+  회귀 테스트를 추가했다.

@@ -27,6 +27,32 @@ def test_probability_rows_are_normalized() -> None:
     assert np.allclose(values, [[2 / 3, 1 / 3]])
 
 
+def test_hierarchical_accuracy_uses_the_exact_top1_family() -> None:
+    probabilities = np.array(
+        [
+            [0.35, 0.05, 0.30, 0.25, 0.03, 0.02],
+            [0.05, 0.05, 0.35, 0.40, 0.10, 0.05],
+            [0.40, 0.20, 0.10, 0.10, 0.15, 0.05],
+        ]
+    )
+    metrics = evaluate_probabilities(
+        [0, 2, 4],
+        probabilities,
+        labels=range(6),
+        family_labels=[0, 0, 1, 1, 2, 2],
+    )
+
+    assert metrics["accuracy"] == pytest.approx(1 / 3)
+    assert metrics["familyAccuracy"] == pytest.approx(2 / 3)
+    assert metrics["hierarchicalAccuracy"] == pytest.approx(0.5)
+    assert metrics["hierarchicalAccuracy"] == pytest.approx(
+        (metrics["accuracy"] + metrics["familyAccuracy"]) / 2
+    )
+    # Row 1's summed BREAKING probability is higher, but the official exact
+    # Top-1 is FOUR_SEAM and therefore receives a full exact/family hit.
+    assert probabilities[0, :2].sum() < probabilities[0, 2:4].sum()
+
+
 def test_negative_probability_fails() -> None:
     with pytest.raises(ValueError, match="negative"):
         validate_probability_matrix(np.array([[1.1, -0.1]]))
@@ -84,6 +110,20 @@ def test_probability_calibration_error_detects_hidden_argmax_error() -> None:
     assert diagnostics["maxClassShareError"] == 0
     assert diagnostics["totalVariationDistance"] == 0
     assert diagnostics["maxClassCalibrationError"] > 0
+
+
+def test_diagnostics_accept_empty_evaluation_slice() -> None:
+    diagnostics = evaluate_diagnostics(
+        [],
+        np.empty((0, 2)),
+        labels=[0, 1],
+        names=["A", "B"],
+        family_labels=[0, 1],
+    )
+
+    assert diagnostics["n"] == 0
+    assert diagnostics["perClass"]["A"]["support"] == 0
+    assert diagnostics["maxClassCalibrationError"] == 0.0
 
 
 def test_game_bootstrap_is_grouped_reproducible_and_detects_gain() -> None:

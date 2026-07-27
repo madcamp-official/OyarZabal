@@ -33,19 +33,30 @@ def evaluate_probabilities(
     probabilities: np.ndarray,
     *,
     labels: Sequence[int],
+    family_labels: Sequence[int] | None = None,
 ) -> dict[str, float | int]:
     values = validate_probability_matrix(probabilities)
     y = np.asarray(actual, dtype=int)
     if len(y) != len(values):
         raise ValueError("actual and probability row counts differ")
+    if family_labels is not None and len(family_labels) != len(labels):
+        raise ValueError("family labels and labels differ in length")
     if len(y) == 0:
-        return {
+        result: dict[str, float | int] = {
             "n": 0,
             "accuracy": 0.0,
             "top3Accuracy": 0.0,
             "macroF1": 0.0,
             "logLoss": 0.0,
         }
+        if family_labels is not None:
+            result.update(
+                {
+                    "familyAccuracy": 0.0,
+                    "hierarchicalAccuracy": 0.0,
+                }
+            )
+        return result
 
     predicted = values.argmax(axis=1)
     top_k = min(3, values.shape[1])
@@ -53,7 +64,7 @@ def evaluate_probabilities(
     top3 = float(
         np.mean([truth in row for truth, row in zip(y, top_indices, strict=True)])
     )
-    return {
+    result = {
         "n": int(len(y)),
         "accuracy": float(accuracy_score(y, predicted)),
         "top3Accuracy": top3,
@@ -68,6 +79,20 @@ def evaluate_probabilities(
         ),
         "logLoss": float(log_loss(y, values, labels=list(labels))),
     }
+    if family_labels is not None:
+        family_by_label = dict(zip(labels, family_labels, strict=True))
+        actual_families = np.array([family_by_label[label] for label in y])
+        predicted_families = np.array(
+            [family_by_label[label] for label in predicted]
+        )
+        family_accuracy = float(
+            accuracy_score(actual_families, predicted_families)
+        )
+        result["familyAccuracy"] = family_accuracy
+        result["hierarchicalAccuracy"] = (
+            float(result["accuracy"]) + family_accuracy
+        ) / 2
+    return result
 
 
 def evaluate_diagnostics(
@@ -76,6 +101,7 @@ def evaluate_diagnostics(
     *,
     labels: Sequence[int],
     names: Sequence[str],
+    family_labels: Sequence[int] | None = None,
 ) -> dict[str, object]:
     """Return aggregate and per-class diagnostics for model selection and UI."""
     label_values = list(labels)
@@ -83,7 +109,30 @@ def evaluate_diagnostics(
         raise ValueError("labels and names differ in length")
     values = validate_probability_matrix(probabilities)
     y = np.asarray(actual, dtype=int)
-    aggregate = evaluate_probabilities(y, values, labels=label_values)
+    aggregate = evaluate_probabilities(
+        y,
+        values,
+        labels=label_values,
+        family_labels=family_labels,
+    )
+    if len(y) == 0:
+        zeros = dict.fromkeys(names, 0.0)
+        return {
+            **aggregate,
+            "actualDistribution": zeros,
+            "predictedDistribution": zeros,
+            "classShareError": zeros,
+            "maxClassShareError": 0.0,
+            "totalVariationDistance": 0.0,
+            "classCalibrationError": zeros,
+            "maxClassCalibrationError": 0.0,
+            "perClass": {
+                name: {"precision": 0.0, "recall": 0.0, "f1": 0.0, "support": 0}
+                for name in names
+            },
+            "zeroRecallClasses": [],
+            "majorityPredictionGap": 0.0,
+        }
     predicted = values.argmax(axis=1)
     precision, recall, f1, support = precision_recall_fscore_support(
         y,

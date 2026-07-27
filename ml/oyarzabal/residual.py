@@ -20,7 +20,7 @@ from .metrics import (
     evaluate_diagnostics,
     validate_probability_matrix,
 )
-from .taxonomy import PITCH_GROUPS
+from .taxonomy import PITCH_GROUP_FAMILY_LABELS, PITCH_GROUPS
 
 RESIDUAL_FEATURES = (
     "pitcher_id",
@@ -696,6 +696,7 @@ def diagnostics(actual: np.ndarray, probabilities: np.ndarray) -> dict[str, obje
         probabilities,
         labels=range(len(PITCH_GROUPS)),
         names=[str(group) for group in PITCH_GROUPS],
+        family_labels=PITCH_GROUP_FAMILY_LABELS,
     )
 
 
@@ -712,6 +713,8 @@ def residual_passes(
         candidate_metrics["logLoss"] < global_metrics["logLoss"]
         and candidate_metrics["accuracy"] >= global_metrics["accuracy"] - 0.005
         and candidate_metrics["macroF1"] >= global_metrics["macroF1"] - 0.005
+        and candidate_metrics["hierarchicalAccuracy"]
+        >= global_metrics["hierarchicalAccuracy"] - 0.005
         and not major_zero_recall
         and candidate_metrics["maxClassShareError"] <= 0.20
         and candidate_metrics["totalVariationDistance"] <= 0.20
@@ -791,6 +794,8 @@ def pitcher_metrics_pass(
         candidate_metrics["logLoss"] < global_metrics["logLoss"]
         and candidate_metrics["accuracy"] >= global_metrics["accuracy"] - 0.005
         and candidate_metrics["macroF1"] >= global_metrics["macroF1"] - 0.005
+        and candidate_metrics["hierarchicalAccuracy"]
+        >= global_metrics["hierarchicalAccuracy"] - 0.005
         and not major_zero_recall
         and candidate_metrics.get("maxClassShareError", float("inf")) <= 0.20
         and candidate_metrics.get("totalVariationDistance", float("inf")) <= 0.20
@@ -810,6 +815,11 @@ def relative_pitcher_failure_reasons(
         reasons.append("accuracy_drop_gt_0.5pp")
     if candidate_metrics["macroF1"] < global_metrics["macroF1"] - 0.005:
         reasons.append("macro_f1_drop_gt_0.5pp")
+    if (
+        candidate_metrics["hierarchicalAccuracy"]
+        < global_metrics["hierarchicalAccuracy"] - 0.005
+    ):
+        reasons.append("hierarchical_accuracy_drop_gt_0.5pp")
     global_major_zero = {
         name
         for name in global_metrics["zeroRecallClasses"]
