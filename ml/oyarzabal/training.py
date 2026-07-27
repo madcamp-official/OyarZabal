@@ -37,6 +37,7 @@ from .residual import (
     apply_correction,
     compute_pitcher_reliability,
     gate_targets,
+    maximum_safe_scale_multiplier,
     pitcher_residual_passes,
     predict_context_gate,
     predict_correction,
@@ -355,6 +356,46 @@ def _gate_metrics(actual: np.ndarray, probabilities: np.ndarray) -> dict[str, fl
     }
 
 
+def _safe_scale_analysis(
+    actual: np.ndarray,
+    global_probabilities: np.ndarray,
+    correction: np.ndarray,
+    routing: list[dict[str, object]],
+    positions: np.ndarray,
+    *,
+    min_support: int,
+) -> dict[str, object]:
+    support = int(len(positions))
+    if support < min_support:
+        return {
+            "support": support,
+            "maxSafeMultiplier": 0.0,
+            "failureReasons": ["insufficient_support"],
+            "metrics": None,
+        }
+    base_scales = np.asarray(
+        [float(routing[position]["effectiveScale"]) for position in positions]
+    )
+    result = maximum_safe_scale_multiplier(
+        actual[positions],
+        global_probabilities[positions],
+        correction[positions],
+        base_scales,
+    )
+    multiplier = float(result["maxSafeMultiplier"])
+    return {
+        "support": support,
+        "maxSafeMultiplier": multiplier,
+        "failureReasons": result["failureReasons"],
+        "metrics": result["metrics"],
+        "effectiveScale": {
+            "baseMean": float(np.mean(base_scales)),
+            "safeMean": float(np.mean(base_scales * multiplier)),
+            "safeMaximum": float(np.max(base_scales * multiplier)),
+        },
+    }
+
+
 def train_hybrid(
     rows: pd.DataFrame,
     model_directory: Path,
@@ -592,6 +633,7 @@ def train_hybrid(
     validations: dict[str, object] = {}
     active_ids: set[int] = set()
     provisional_ids: set[int] = set()
+    recommended_tiers: Counter[str] = Counter()
     for pitcher_id in pool:
         positions_2024 = np.flatnonzero(
             evaluation_rows_2024["pitcher_id"].to_numpy() == pitcher_id
@@ -627,6 +669,33 @@ def train_hybrid(
             active_ids.add(pitcher_id)
         elif aggregate_passed and validation_passed and not len(positions_2025):
             provisional_ids.add(pitcher_id)
+        safe_2024 = _safe_scale_analysis(
+            evaluation_rows_2024["target"].to_numpy(),
+            evaluation_global_2024,
+            correction_2024[evaluation_mask],
+            routing_2024,
+            positions_2024,
+            min_support=MIN_2024_EVALUATION_PITCHES,
+        )
+        safe_2025 = _safe_scale_analysis(
+            pooled_rows[2025]["target"].to_numpy(),
+            pooled_global[2025],
+            correction_2025,
+            routing_2025,
+            positions_2025,
+            min_support=MIN_2025_EVALUATION_PITCHES,
+        )
+        conservative_multiplier = min(
+            float(safe_2024["maxSafeMultiplier"]),
+            float(safe_2025["maxSafeMultiplier"]),
+        )
+        if aggregate_passed and validation_passed and test_passed:
+            recommended_tier = "full"
+        elif aggregate_passed and conservative_multiplier > 0:
+            recommended_tier = "limited"
+        else:
+            recommended_tier = "shadow"
+        recommended_tiers[recommended_tier] += 1
         validations[str(pitcher_id)] = {
             "pitcherId": pitcher_id,
             "name": names[pitcher_id],
@@ -642,6 +711,12 @@ def train_hybrid(
             "validationMetrics": validation_candidate,
             "testGlobalMetrics": test_global,
             "testMetrics": test_candidate,
+            "safeScale": {
+                "2024": safe_2024,
+                "2025": safe_2025,
+                "conservativeMultiplier": conservative_multiplier,
+                "recommendedTier": recommended_tier,
+            },
         }
 
     registry: dict[int, RegistryEntry] = {}
@@ -792,6 +867,15 @@ def train_hybrid(
             "activeCount": len(active_ids),
             "provisionalCount": len(provisional_ids),
             "shadowCount": len(pool) - len(active_ids) - len(provisional_ids),
+            "safeScaleAnalysis": {
+                "method": (
+                    "largest 0.05-step multiplier of existing per-pitch V6 "
+                    "scale that improves log loss without new relative harm"
+                ),
+                "selectionYears": [2024, 2025],
+                "recommendedCounts": dict(sorted(recommended_tiers.items())),
+                "productionRoutingChanged": False,
+            },
             "routing2024": _routing_summary(routing_2024),
             "routing2025": _routing_summary(routing_2025),
         },

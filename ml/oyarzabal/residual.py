@@ -29,6 +29,7 @@ RESIDUAL_FEATURES = (
     "pa_prev_pitch_1",
 )
 RESIDUAL_SCALES = (0.25, 0.5, 0.75, 1.0)
+SAFE_SCALE_MULTIPLIERS = tuple(value / 20 for value in range(1, 21))
 GATE_CATEGORICAL_FEATURES = (
     "count_bucket",
     "stand",
@@ -490,15 +491,28 @@ def predict_correction(fitted: FittedResidual, rows: pd.DataFrame) -> np.ndarray
 def apply_correction(
     global_probabilities: np.ndarray,
     correction: np.ndarray,
-    scale: float,
+    scale: float | np.ndarray,
 ) -> np.ndarray:
-    if not 0 <= scale <= 1:
-        raise ValueError("residual scale must be between zero and one")
     global_values = validate_probability_matrix(global_probabilities)
     residual_values = np.asarray(correction, dtype=float)
     if residual_values.shape != global_values.shape:
         raise ValueError("global probabilities and residual correction differ")
-    logits = _base_margin(global_values) + scale * residual_values
+    scale_values = np.asarray(scale, dtype=float)
+    if scale_values.ndim == 0:
+        if not 0 <= float(scale_values) <= 1:
+            raise ValueError("residual scale must be between zero and one")
+        scaled = float(scale_values) * residual_values
+    elif scale_values.shape == (len(global_values),):
+        if (
+            not np.isfinite(scale_values).all()
+            or (scale_values < 0).any()
+            or (scale_values > 1).any()
+        ):
+            raise ValueError("residual scales must be between zero and one")
+        scaled = scale_values[:, None] * residual_values
+    else:
+        raise ValueError("residual scales do not match probability rows")
+    logits = _base_margin(global_values) + scaled
     logits -= logits.max(axis=1, keepdims=True)
     probabilities = np.exp(logits)
     return validate_probability_matrix(
@@ -783,6 +797,88 @@ def pitcher_metrics_pass(
         and candidate_metrics.get("maxClassCalibrationError", float("inf"))
         <= 0.10
     )
+
+
+def relative_pitcher_failure_reasons(
+    global_metrics: Mapping[str, object],
+    candidate_metrics: Mapping[str, object],
+) -> list[str]:
+    reasons = []
+    if candidate_metrics["logLoss"] >= global_metrics["logLoss"]:
+        reasons.append("log_loss_not_improved")
+    if candidate_metrics["accuracy"] < global_metrics["accuracy"] - 0.005:
+        reasons.append("accuracy_drop_gt_0.5pp")
+    if candidate_metrics["macroF1"] < global_metrics["macroF1"] - 0.005:
+        reasons.append("macro_f1_drop_gt_0.5pp")
+    global_major_zero = {
+        name
+        for name in global_metrics["zeroRecallClasses"]
+        if global_metrics["actualDistribution"][name] >= 0.05
+    }
+    candidate_major_zero = {
+        name
+        for name in candidate_metrics["zeroRecallClasses"]
+        if candidate_metrics["actualDistribution"][name] >= 0.05
+    }
+    if candidate_major_zero - global_major_zero:
+        reasons.append("new_major_zero_recall")
+    for name, limit, reason in (
+        ("maxClassShareError", 0.20, "share_error_worsened"),
+        ("totalVariationDistance", 0.20, "tvd_worsened"),
+        ("maxClassCalibrationError", 0.10, "calibration_error_worsened"),
+    ):
+        if (
+            candidate_metrics[name] > limit
+            and candidate_metrics[name] > global_metrics[name] + 1e-12
+        ):
+            reasons.append(reason)
+    return reasons
+
+
+def maximum_safe_scale_multiplier(
+    actual: np.ndarray,
+    global_probabilities: np.ndarray,
+    correction: np.ndarray,
+    base_scales: np.ndarray,
+    *,
+    multipliers: Sequence[float] = SAFE_SCALE_MULTIPLIERS,
+) -> dict[str, object]:
+    global_values = validate_probability_matrix(global_probabilities)
+    residual_values = np.asarray(correction, dtype=float)
+    scales = np.asarray(base_scales, dtype=float)
+    if (
+        len(actual) != len(global_values)
+        or residual_values.shape != global_values.shape
+        or scales.shape != (len(global_values),)
+    ):
+        raise ValueError("safe scale inputs are misaligned")
+    candidates = sorted({float(value) for value in multipliers}, reverse=True)
+    if not candidates or candidates[-1] <= 0 or candidates[0] > 1:
+        raise ValueError("safe scale multipliers must be in (0, 1]")
+    global_metrics = diagnostics(actual, global_values)
+    last_reasons = ["log_loss_not_improved"]
+    for multiplier in candidates:
+        probabilities = apply_correction(
+            global_values,
+            residual_values,
+            scales * multiplier,
+        )
+        metrics = diagnostics(actual, probabilities)
+        reasons = relative_pitcher_failure_reasons(global_metrics, metrics)
+        if not reasons:
+            return {
+                "maxSafeMultiplier": multiplier,
+                "globalMetrics": global_metrics,
+                "metrics": metrics,
+                "failureReasons": [],
+            }
+        last_reasons = reasons
+    return {
+        "maxSafeMultiplier": 0.0,
+        "globalMetrics": global_metrics,
+        "metrics": global_metrics,
+        "failureReasons": last_reasons,
+    }
 
 
 def provisional_scale(
