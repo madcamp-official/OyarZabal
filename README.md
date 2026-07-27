@@ -32,8 +32,8 @@ uv run oyarzabal-fetch-statcast
 uv run oyarzabal-train-hybrid
 uv run oyarzabal-build-demo \
   --history data/raw/statcast \
-  --game <경기 parquet 경로> \
-  --predictions <예측 CSV 경로>
+  --game /path/to/game.parquet \
+  --predictions /path/to/predictions.csv
 uv run pytest -q
 ```
 
