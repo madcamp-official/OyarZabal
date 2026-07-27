@@ -1,6 +1,10 @@
 # V2 — PA/Game 문맥 + shrinkage personalizer
 
-## 1. 스냅샷
+> [!NOTE]
+> **한 줄 결론:** 문맥 피처로 Global 지표는 소폭 개선됐지만, 상수 logit
+> bias 방식의 개인화는 2025 외부 게이트에서 모두 탈락했다.
+
+## 한눈에 보기
 
 - 날짜: 2026-07-25
 - 학습 데이터: 2022–2025 지원 구종 2,916,065구
@@ -8,21 +12,21 @@
 - 구조: Global XGBoost + 투수별 regularized logit bias
 - Global: `global-sqrt-d6-m8`, 1,779 trees, temperature 1.0306
 
-## 2. 변경 사항
+## 무엇이 바뀌었나
 
 타석 내 구종별 사용 횟수, 첫 구종, 구종 다양성, 계열 비율, 연속 횟수와 현재
 경기 레퍼토리 변화를 point-in-time 피처로 추가했다. 독립 Specialist는
 Global 확률에 작은 투수별 logit bias만 더하는 shrinkage personalizer로
 교체했다. Early stopping 상한은 2,000 trees로 늘렸다.
 
-## 3. 평가 프로토콜
+## 평가 설계
 
 - 후보 선택: 2024
 - 최종 게이트: 선택에 사용하지 않은 2025
 - 2025 평가 표본: 725,576구
 - 보조 평가: 같은 307구 역사적 쇼케이스
 
-## 4. 결과
+## 성능 결과
 
 ### 2025 MLB-wide
 
@@ -40,15 +44,13 @@ Nestor Cortes는 2024 내부 검증을 통과했지만 2025에서 다음과 같�
 | Global | 44.81% | 23.76% | 1.1839 |
 | Personalizer | 43.32% | 23.68% | 1.1698 |
 
-```mermaid
-xychart-beta
-    title "Nestor Cortes 2025 Accuracy"
-    x-axis ["Global", "Personalizer"]
-    y-axis "Accuracy (%)" 40 --> 46
-    bar [44.81, 43.32]
-```
+| 변화 | Accuracy | Macro F1 | Log Loss |
+|---|---:|---:|---:|
+| Personalizer − Global | **−1.49%p** | **−0.08%p** | **−0.0141** |
 
-확률 품질은 좋아졌지만 Top-1과 클래스 균형이 악화되어 비활성화했다.
+> [!WARNING]
+> Log Loss는 개선됐지만 Top-1 Accuracy와 클래스 균형은 악화됐다. 확률
+> 품질 하나만 좋아졌다는 이유로 개인화를 활성화하지 않았다.
 
 ### 307구 쇼케이스
 
@@ -56,21 +58,21 @@ xychart-beta
 |---:|---:|---:|---:|---:|
 | 50.16% | 93.81% | 46.47% | 1.0667 | 1.0678 |
 
-## 5. 해석
+## 판단
 
 PA/Game 문맥과 늘어난 tree 수로 V1보다 시간 재현성과 지표가 소폭 개선됐다.
 그러나 파일럿 personalizer는 MLB-wide 게이트에서 모두 탈락했다. 상수
 logit bias만으로는 카운트·타자 손잡이·직전 구종에 따라 달라지는 투수 선택을
 표현하기 어렵다는 결론으로 이어졌다.
 
-## 6. 한계
+## 비교 시 주의사항
 
 - V1과 같은 taxonomy지만 주 평가 표본이 V1의 2개년 OOF와 다르다.
 - 307구 쇼케이스 수치는 별도 13명 캐시 pregame 실행이라 MLB-wide 배포
   결과와 분리해야 한다.
 - Log Loss 개선만으로 개인화 모델을 활성화할 수 없음을 보여준다.
 
-## 7. 근거
+## 재현 근거
 
 - 로컬 run artifact:
   `artifacts/runs/20260725T020300325197Z/result.json`

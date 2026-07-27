@@ -94,6 +94,11 @@ def evaluate_diagnostics(
     actual_counts = np.array([(y == label).sum() for label in label_values])
     predicted_counts = np.array([(predicted == label).sum() for label in label_values])
     total = max(1, len(y))
+    actual_shares = actual_counts / total
+    predicted_shares = predicted_counts / total
+    probability_shares = values.mean(axis=0)
+    share_errors = predicted_shares - actual_shares
+    calibration_errors = probability_shares - actual_shares
     actual_distribution = {
         name: float(count / total)
         for name, count in zip(names, actual_counts, strict=True)
@@ -124,12 +129,76 @@ def evaluate_diagnostics(
         **aggregate,
         "actualDistribution": actual_distribution,
         "predictedDistribution": predicted_distribution,
+        "classShareError": {
+            name: float(error)
+            for name, error in zip(names, share_errors, strict=True)
+        },
+        "maxClassShareError": float(np.abs(share_errors).max(initial=0)),
+        "totalVariationDistance": float(np.abs(share_errors).sum() / 2),
+        "classCalibrationError": {
+            name: float(error)
+            for name, error in zip(names, calibration_errors, strict=True)
+        },
+        "maxClassCalibrationError": float(
+            np.abs(calibration_errors).max(initial=0)
+        ),
         "perClass": per_class,
         "zeroRecallClasses": zero_recall,
         "majorityPredictionGap": max(
             0.0,
             float(predicted_counts.max() / total - actual_counts.max() / total),
         ),
+    }
+
+
+def bootstrap_log_loss_gain(
+    game_ids: Sequence[object],
+    actual: Sequence[int],
+    reference_probabilities: np.ndarray,
+    candidate_probabilities: np.ndarray,
+    *,
+    samples: int = 500,
+    seed: int = 737,
+) -> dict[str, float | int]:
+    """Paired game bootstrap of reference minus candidate per-pitch log loss."""
+    if samples <= 0:
+        raise ValueError("bootstrap samples must be positive")
+    reference = validate_probability_matrix(reference_probabilities)
+    candidate = validate_probability_matrix(candidate_probabilities)
+    labels = np.asarray(actual, dtype=int)
+    games = np.asarray(game_ids)
+    if (
+        len(labels) != len(reference)
+        or candidate.shape != reference.shape
+        or len(games) != len(labels)
+        or not len(labels)
+    ):
+        raise ValueError("bootstrap inputs are empty or misaligned")
+    if labels.min() < 0 or labels.max() >= reference.shape[1]:
+        raise ValueError("bootstrap labels are outside probability classes")
+
+    positions = np.arange(len(labels))
+    gains = np.log(np.clip(candidate[positions, labels], 1e-12, 1))
+    gains -= np.log(np.clip(reference[positions, labels], 1e-12, 1))
+    unique_games, inverse = np.unique(games, return_inverse=True)
+    game_gain = np.bincount(inverse, weights=gains)
+    game_count = np.bincount(inverse).astype(float)
+    random = np.random.default_rng(seed)
+    sampled = random.integers(
+        0,
+        len(unique_games),
+        size=(samples, len(unique_games)),
+    )
+    bootstrap_gain = game_gain[sampled].sum(axis=1) / game_count[sampled].sum(axis=1)
+    return {
+        "games": int(len(unique_games)),
+        "samples": int(samples),
+        "meanGain": float(gains.mean()),
+        "improvementProbability": float(
+            (np.count_nonzero(bootstrap_gain > 0) + 0.5) / (samples + 1)
+        ),
+        "ciLower": float(np.quantile(bootstrap_gain, 0.025)),
+        "ciUpper": float(np.quantile(bootstrap_gain, 0.975)),
     }
 
 

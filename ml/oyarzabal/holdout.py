@@ -14,10 +14,19 @@ import numpy as np
 import pandas as pd
 
 from .features import prepare_pitch_rows
-from .hybrid import RegistryEntry, apply_pooled_residual_by_pitcher
-from .metrics import evaluate_diagnostics
+from .hybrid import (
+    RegistryEntry,
+    apply_logit_bias,
+    apply_pooled_residual_by_pitcher,
+    apply_reliability_gated_residual,
+)
+from .metrics import bootstrap_log_loss_gain, evaluate_diagnostics
 from .modeling import predict_candidate
-from .residual import predict_correction
+from .residual import (
+    pitcher_residual_passes,
+    predict_context_gate,
+    predict_correction,
+)
 from .taxonomy import PITCH_GROUPS
 
 DEFAULT_CUTOFF = pd.Timestamp("2025-12-31")
@@ -80,6 +89,8 @@ def _registry(payload: dict[str, object]) -> dict[int, RegistryEntry]:
             spec=raw.get("spec"),
             status=str(raw["status"]),
             residual_scale=raw.get("residualScale"),
+            reliability=raw.get("reliability"),
+            reliability_components=raw.get("reliabilityComponents"),
             selection_rank=raw.get("selectionRank"),
             support=raw.get("support"),
         )
@@ -103,7 +114,7 @@ def _hash(path: Path) -> str:
     return digest.hexdigest()
 
 
-def evaluate_frozen_holdout(
+def _predict_models(
     rows: pd.DataFrame,
     model_directory: Path,
 ) -> dict[str, object]:
@@ -123,14 +134,158 @@ def evaluate_frozen_holdout(
         rows,
         temperature=float(registry_payload["global"]["temperature"]),
     )
+    calibration = registry_payload["global"].get("calibration", {})
+    calibration_bias = calibration.get("bias")
+    if calibration_bias is not None:
+        global_probabilities = apply_logit_bias(
+            global_probabilities,
+            calibration_bias,
+        )
     correction = predict_correction(residual_model, rows)
-    final_probabilities, sources = apply_pooled_residual_by_pitcher(
-        rows["pitcher_id"].to_numpy(),
-        global_probabilities,
-        correction,
-        registry,
-        prediction_dates=[value.date() for value in rows["game_date"]],
+    model_paths = {
+        "global": {"path": str(global_path), "sha256": _hash(global_path)},
+        "residual": {
+            "path": str(residual_path),
+            "sha256": _hash(residual_path),
+        },
+        "registry": {
+            "path": str(registry_path),
+            "sha256": _hash(registry_path),
+        },
+    }
+    if int(registry_payload["schemaVersion"]) >= 5:
+        gate_path = model_directory / str(registry_payload["gate"]["model"])
+        with gate_path.open("rb") as handle:
+            gate_model = pickle.load(handle)
+        context_gate = predict_context_gate(
+            gate_model,
+            rows,
+            global_probabilities,
+            correction,
+        )
+        final_probabilities, sources, routing = apply_reliability_gated_residual(
+            rows,
+            global_probabilities,
+            correction,
+            context_gate,
+            registry,
+            prediction_dates=[value.date() for value in rows["game_date"]],
+        )
+        model_paths["gate"] = {
+            "path": str(gate_path),
+            "sha256": _hash(gate_path),
+        }
+    else:
+        final_probabilities, sources = apply_pooled_residual_by_pitcher(
+            rows["pitcher_id"].to_numpy(),
+            global_probabilities,
+            correction,
+            registry,
+            prediction_dates=[value.date() for value in rows["game_date"]],
+        )
+        routing = [
+            {
+                "pitcherReliability": entry.residual_scale if entry else 0,
+                "contextGate": 1 if source != "global" else 0,
+                "effectiveScale": entry.residual_scale if entry else 0,
+                "capReason": None,
+                "hardGateReason": (
+                    None if source != "global" else "registry_inactive"
+                ),
+            }
+            for source, pitcher_id in zip(
+                sources,
+                rows["pitcher_id"],
+                strict=True,
+            )
+            for entry in [registry.get(int(pitcher_id))]
+        ]
+    return {
+        "registryPayload": registry_payload,
+        "registry": registry,
+        "global": global_probabilities,
+        "final": final_probabilities,
+        "sources": sources,
+        "routing": routing,
+        "models": model_paths,
+    }
+
+
+def _paired(
+    rows: pd.DataFrame,
+    reference: np.ndarray,
+    candidate: np.ndarray,
+    *,
+    samples: int = 1_000,
+) -> dict[str, float | int]:
+    return bootstrap_log_loss_gain(
+        rows["game_pk"].to_numpy(),
+        rows["target"].to_numpy(),
+        reference,
+        candidate,
+        samples=samples,
     )
+
+
+def _breakdowns(
+    rows: pd.DataFrame,
+    global_probabilities: np.ndarray,
+    final_probabilities: np.ndarray,
+) -> tuple[dict[str, object], dict[str, object]]:
+    pitchers = {}
+    for pitcher_id, positions in rows.groupby("pitcher_id", sort=True).indices.items():
+        indices = np.asarray(positions)
+        selected = rows.iloc[indices]
+        pitchers[str(int(pitcher_id))] = {
+            "n": int(len(indices)),
+            "global": _metrics(selected, global_probabilities[indices]),
+            "final": _metrics(selected, final_probabilities[indices]),
+            "pairedBootstrap": _paired(
+                selected,
+                global_probabilities[indices],
+                final_probabilities[indices],
+                samples=500,
+            ),
+        }
+    months = {}
+    month_keys = rows["game_date"].dt.to_period("M").astype(str)
+    for month, positions in rows.groupby(month_keys, sort=True).indices.items():
+        indices = np.asarray(positions)
+        selected = rows.iloc[indices]
+        months[str(month)] = {
+            "n": int(len(indices)),
+            "global": _metrics(selected, global_probabilities[indices]),
+            "final": _metrics(selected, final_probabilities[indices]),
+            "pairedBootstrap": _paired(
+                selected,
+                global_probabilities[indices],
+                final_probabilities[indices],
+                samples=500,
+            ),
+        }
+    return pitchers, months
+
+
+def evaluate_frozen_holdout(
+    rows: pd.DataFrame,
+    model_directory: Path,
+    *,
+    reference_model_directory: Path | None = None,
+    evaluation_start: pd.Timestamp | None = None,
+) -> dict[str, object]:
+    if evaluation_start is not None:
+        rows = rows[
+            rows["game_date"].dt.normalize() >= evaluation_start.normalize()
+        ].copy()
+        if rows.empty:
+            raise ValueError("no holdout rows at or after evaluation start")
+    predicted = _predict_models(rows, model_directory)
+    registry_payload = predicted["registryPayload"]
+    registry = predicted["registry"]
+    global_probabilities = predicted["global"]
+    final_probabilities = predicted["final"]
+    sources = predicted["sources"]
+    routing = predicted["routing"]
 
     pool_ids = set(registry)
     enabled_ids = {
@@ -147,27 +302,128 @@ def evaluate_frozen_holdout(
         scopes[name] = {
             "global": _metrics(selected, global_probabilities[mask]),
             "final": _metrics(selected, final_probabilities[mask]),
+            "pairedBootstrap": _paired(
+                selected,
+                global_probabilities[mask],
+                final_probabilities[mask],
+            ),
+        }
+    pitchers, months = _breakdowns(
+        rows,
+        global_probabilities,
+        final_probabilities,
+    )
+    scale_values = np.array(
+        [float(value["effectiveScale"]) for value in routing],
+        dtype=float,
+    )
+    cap_counts = Counter(
+        str(value["capReason"])
+        for value in routing
+        if value["capReason"] is not None
+    )
+    hard_counts = Counter(
+        str(value["hardGateReason"])
+        for value in routing
+        if value["hardGateReason"] is not None
+    )
+    reference = None
+    promotion = None
+    if reference_model_directory is not None:
+        reference_predictions = _predict_models(rows, reference_model_directory)
+        reference_probabilities = reference_predictions["final"]
+        promotion_probabilities = final_probabilities.copy()
+        player_failures = []
+        for pitcher_id, entry in registry.items():
+            if not entry.enabled:
+                continue
+            positions = np.flatnonzero(
+                rows["pitcher_id"].to_numpy(dtype=int) == pitcher_id
+            )
+            if len(positions) < 300:
+                continue
+            passed, player_global, player_candidate = pitcher_residual_passes(
+                rows["target"].to_numpy()[positions],
+                global_probabilities[positions],
+                final_probabilities[positions],
+                min_support=300,
+            )
+            if not passed:
+                promotion_probabilities[positions] = global_probabilities[positions]
+                player_failures.append(
+                    {
+                        "pitcherId": pitcher_id,
+                        "support": int(len(positions)),
+                        "global": player_global,
+                        "candidate": player_candidate,
+                    }
+                )
+        paired = _paired(
+            rows,
+            reference_probabilities,
+            promotion_probabilities,
+        )
+        reference_metrics = _metrics(rows, reference_probabilities)
+        candidate_metrics = _metrics(rows, promotion_probabilities)
+        days = (
+            rows["game_date"].max().normalize()
+            - rows["game_date"].min().normalize()
+        ).days + 1
+        failed_ids = {value["pitcherId"] for value in player_failures}
+        intervention_mask = (scale_values > 0) & ~rows["pitcher_id"].isin(
+            failed_ids
+        ).to_numpy()
+        intervened = int(np.count_nonzero(intervention_mask))
+        enough_data = days >= 30 and len(rows) >= 100_000 and intervened >= 15_000
+        metric_passed = (
+            paired["ciLower"] > 0
+            and candidate_metrics["accuracy"]
+            >= reference_metrics["accuracy"] - 0.005
+            and candidate_metrics["macroF1"]
+            >= reference_metrics["macroF1"] - 0.005
+            and not candidate_metrics["zeroRecallClasses"]
+            and candidate_metrics["maxClassShareError"] <= 0.20
+            and candidate_metrics["totalVariationDistance"] <= 0.20
+            and candidate_metrics["maxClassCalibrationError"] <= 0.10
+        )
+        reference = {
+            "models": reference_predictions["models"],
+            "metrics": reference_metrics,
+        }
+        promotion = {
+            "days": int(days),
+            "rows": int(len(rows)),
+            "intervenedRows": intervened,
+            "enoughData": enough_data,
+            "pairedBootstrap": paired,
+            "deactivatedPitchers": player_failures,
+            "metricPassed": metric_passed,
+            "promoted": bool(enough_data and metric_passed),
         }
 
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "generatedAt": datetime.now(UTC).isoformat(),
         "trainingCutoff": str(registry_payload["dataCutoff"]),
         "holdoutStart": rows["game_date"].min().date().isoformat(),
         "holdoutEnd": rows["game_date"].max().date().isoformat(),
-        "models": {
-            "global": {"path": str(global_path), "sha256": _hash(global_path)},
-            "residual": {
-                "path": str(residual_path),
-                "sha256": _hash(residual_path),
-            },
-            "registry": {
-                "path": str(registry_path),
-                "sha256": _hash(registry_path),
-            },
-        },
+        "models": predicted["models"],
+        "reference": reference,
+        "promotion": promotion,
         "routing": dict(sorted(Counter(sources).items())),
+        "routingDiagnostics": {
+            "effectiveScale": {
+                "p10": float(np.quantile(scale_values, 0.10)),
+                "p50": float(np.quantile(scale_values, 0.50)),
+                "p90": float(np.quantile(scale_values, 0.90)),
+                "nonZero": int(np.count_nonzero(scale_values > 0)),
+            },
+            "capReasons": dict(sorted(cap_counts.items())),
+            "hardGateReasons": dict(sorted(hard_counts.items())),
+        },
         "scopes": scopes,
+        "pitchers": pitchers,
+        "months": months,
     }
 
 
@@ -177,19 +433,25 @@ def main() -> None:
     parser.add_argument(
         "--holdout", type=Path, default=Path("data/holdout/statcast-2026")
     )
-    parser.add_argument("--models", type=Path, default=Path("models/hybrid"))
+    parser.add_argument("--models", type=Path, default=Path("models/v6"))
+    parser.add_argument("--reference-models", type=Path)
+    parser.add_argument("--start", type=pd.Timestamp)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     result = evaluate_frozen_holdout(
         frozen_rows(args.history, args.holdout),
         args.models,
+        reference_model_directory=args.reference_models,
+        evaluation_start=args.start,
     )
     text = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(text, encoding="utf-8")
-    print(text)
+        print(f"Wrote holdout evaluation to {args.output}")
+    else:
+        print(text)
 
 
 if __name__ == "__main__":

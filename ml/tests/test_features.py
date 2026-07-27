@@ -177,6 +177,15 @@ def test_global_model_features_do_not_expose_player_identity() -> None:
     assert prepared["batter_id"].tolist() == [20, 20, 30]
 
 
+def test_gate_support_features_are_point_in_time() -> None:
+    prepared = prepare_pitch_rows([_rows()])
+
+    assert prepared["career_support"].tolist() == [0, 1, 2]
+    assert prepared["count_support"].tolist() == [0, 0, 1]
+    assert prepared["stand_support"].tolist() == [0, 1, 0]
+    assert prepared["transition_support"].tolist() == [0, 0, 1]
+
+
 def test_sparse_bat_score_diff_column_falls_back_row_by_row() -> None:
     history = _rows().iloc[:2].copy()
     history["bat_score"] = [3, 4]

@@ -61,3 +61,15 @@ API, 데이터베이스, 계정 시스템을 추가하지 않는다.
 확정한다. 2026 투구는 이 값들의 학습·선택·활성화에 사용하지 않고 최종 성능
 평가에만 사용한다. 단, 실제 서비스 상황과 같이 이미 공개된 2026 이전 투구는
 뒤따르는 투구의 point-in-time 문맥 피처를 갱신할 수 있다.
+
+## 2026-07-27 — 고정 scale을 reliability-gated residual로 교체
+
+공통 residual scale 0.5와 active 25명 상한을 제거한다. 투수별 OOF 표본,
+전체 기간과 최근 90일 경기 bootstrap 개선 확률, 투수 ID가 없는 binary
+상황 Gate를 곱해 투구별 scale을 계산한다. 별도 drift·magnitude 모델은
+추가하지 않고 JS 0.05와 클래스별 20%p 변화 cap만 유지한다.
+
+선수 활성화에는 Log Loss·Accuracy·Macro F1뿐 아니라 signed class share,
+TVD, 주요 구종 recall과 class probability calibration을 사용한다. 2024·2025
+게이트를 통과한 수만 active로 두며 V6는 2026-07-26 이후 prospective 조건을
+통과할 때까지 shadow로 유지한다.

@@ -142,6 +142,7 @@ def _add_repertoire_features(rows: pd.DataFrame) -> None:
     career_total, career_counts = _past_group_counts(
         rows, ["pitcher"], indicators, supported
     )
+    rows["career_support"] = career_total.astype("float32")
     career_rates = _smoothed_rates(
         rows,
         "career_rate_",
@@ -202,12 +203,23 @@ def _add_repertoire_features(rows: pd.DataFrame) -> None:
         20,
     )
 
-    for prefix, keys, strength in (
-        ("count_rate_", ["pitcher", "balls", "strikes"], 20),
-        ("stand_rate_", ["pitcher", "stand"], 30),
-        ("transition_rate_", ["pitcher", "prev_pitch_group"], 15),
+    for prefix, support_name, keys, strength in (
+        (
+            "count_rate_",
+            "count_support",
+            ["pitcher", "balls", "strikes"],
+            20,
+        ),
+        ("stand_rate_", "stand_support", ["pitcher", "stand"], 30),
+        (
+            "transition_rate_",
+            "transition_support",
+            ["pitcher", "prev_pitch_group"],
+            15,
+        ),
     ):
         total, counts = _past_group_counts(rows, keys, indicators, supported)
+        rows[support_name] = total.astype("float32")
         _smoothed_rates(
             rows,
             prefix,

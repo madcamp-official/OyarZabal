@@ -15,6 +15,11 @@ export interface Metrics {
   logLoss: number;
   actualDistribution: Record<string, number>;
   predictedDistribution: Record<string, number>;
+  classShareError: Record<string, number>;
+  maxClassShareError: number;
+  totalVariationDistance: number;
+  classCalibrationError: Record<string, number>;
+  maxClassCalibrationError: number;
   perClass: Record<string, ClassMetrics>;
   zeroRecallClasses: string[];
   majorityPredictionGap: number;
@@ -44,11 +49,17 @@ export interface Pitch {
       | "global"
       | "hybrid"
       | "pooled-residual"
-      | "provisional-residual";
+      | "provisional-residual"
+      | "reliability-gated-residual";
     label: string;
     globalWeight: number;
     specialistWeight: number;
     residualScale?: number;
+    pitcherReliability?: number;
+    contextGate?: number;
+    effectiveScale?: number;
+    capReason?: string | null;
+    hardGateReason?: string | null;
   };
   predictions: Record<ModelKey, Prediction>;
   explanations: string[];
@@ -76,10 +87,11 @@ export interface Game {
 }
 
 export interface Manifest {
-  schemaVersion: 5;
+  schemaVersion: 6;
   generatedAt: string;
   caveat: string;
   finalModel: string;
+  deploymentStatus: "shadow" | "active";
   dataScope?: {
     startDate: string;
     endDate: string;

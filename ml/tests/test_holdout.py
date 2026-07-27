@@ -52,6 +52,38 @@ def test_registry_rejects_any_post_2025_training_data() -> None:
     with pytest.raises(ValueError, match="post-2025"):
         _registry(json.loads(json.dumps(payload)))
 
+
+def test_registry_reads_v6_reliability_metadata() -> None:
+    payload = {
+        "schemaVersion": 5,
+        "dataCutoff": "2025-11-01",
+        "specialists": {
+            "10": {
+                "pitcherId": 10,
+                "enabled": True,
+                "specialistWeight": 0,
+                "model": "pooled-residual.pkl",
+                "dataCutoff": "2025-09-01",
+                "status": "active",
+                "residualScale": None,
+                "reliability": 0.2,
+                "reliabilityComponents": {
+                    "n": 1_000,
+                    "supportCoefficient": 0.5,
+                    "pAll": 0.8,
+                    "pRecent": 0.5,
+                },
+                "selectionRank": None,
+                "support": {"2025": 500},
+            }
+        },
+    }
+
+    entry = _registry(payload)[10]
+
+    assert entry.reliability == 0.2
+    assert entry.reliability_components["pRecent"] == 0.5
+
     payload["dataCutoff"] = "2026-01-01"
     payload["specialists"]["10"]["dataCutoff"] = "2025-12-31"
     with pytest.raises(ValueError, match="post-2025"):

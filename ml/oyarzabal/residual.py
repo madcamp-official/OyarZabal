@@ -9,10 +9,17 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 from xgboost import XGBClassifier
 
-from .metrics import evaluate_diagnostics, validate_probability_matrix
+from .metrics import (
+    bootstrap_log_loss_gain,
+    evaluate_diagnostics,
+    validate_probability_matrix,
+)
 from .taxonomy import PITCH_GROUPS
 
 RESIDUAL_FEATURES = (
@@ -22,11 +29,48 @@ RESIDUAL_FEATURES = (
     "pa_prev_pitch_1",
 )
 RESIDUAL_SCALES = (0.25, 0.5, 0.75, 1.0)
+GATE_CATEGORICAL_FEATURES = (
+    "count_bucket",
+    "stand",
+    "p_throws",
+    "pa_prev_pitch_1",
+)
+GATE_NUMERIC_FEATURES = (
+    "balls",
+    "strikes",
+    "outs_when_up",
+    "inning",
+    "base_1",
+    "base_2",
+    "base_3",
+    "score_diff",
+    "game_pitch_count",
+    "n_thruorder_pitcher",
+    "pitcher_days_since_prev_game",
+    "pitch_number",
+    "career_support",
+    "count_support",
+    "stand_support",
+    "transition_support",
+    "global_entropy",
+    "global_top1",
+    "global_top1_margin",
+    "global_reference_js",
+    "global_reference_top1_disagreement",
+)
 
 
 @dataclass
 class FittedResidual:
     encoder: OneHotEncoder
+    model: XGBClassifier
+    tree_count: int
+    device: str
+
+
+@dataclass
+class FittedGate:
+    preprocessor: ColumnTransformer
     model: XGBClassifier
     tree_count: int
     device: str
@@ -60,6 +104,233 @@ def residual_feature_frame(rows: pd.DataFrame) -> pd.DataFrame:
         },
         index=rows.index,
     )
+
+
+def gate_feature_frame(
+    rows: pd.DataFrame,
+    global_probabilities: np.ndarray,
+    correction: np.ndarray,
+) -> pd.DataFrame:
+    global_values = validate_probability_matrix(global_probabilities)
+    residual_values = np.asarray(correction, dtype=float)
+    if len(rows) != len(global_values) or residual_values.shape != global_values.shape:
+        raise ValueError("gate rows and model outputs are misaligned")
+    reference = apply_correction(global_values, residual_values, 0.5)
+    midpoint = (global_values + reference) / 2
+    js = 0.5 * (
+        np.where(
+            global_values > 0,
+            global_values * np.log(global_values / midpoint),
+            0,
+        ).sum(axis=1)
+        + np.where(
+            reference > 0,
+            reference * np.log(reference / midpoint),
+            0,
+        ).sum(axis=1)
+    )
+    sorted_probabilities = np.sort(global_values, axis=1)
+    values: dict[str, object] = {
+        "count_bucket": count_bucket(rows),
+        "stand": rows.get("stand", pd.Series("UNKNOWN", index=rows.index)),
+        "p_throws": rows.get("p_throws", pd.Series("UNKNOWN", index=rows.index)),
+        "pa_prev_pitch_1": rows.get(
+            "pa_prev_pitch_1", pd.Series("UNKNOWN", index=rows.index)
+        ),
+        "global_entropy": -np.sum(
+            np.where(global_values > 0, global_values * np.log(global_values), 0),
+            axis=1,
+        ),
+        "global_top1": global_values.max(axis=1),
+        "global_top1_margin": (
+            sorted_probabilities[:, -1] - sorted_probabilities[:, -2]
+        ),
+        "global_reference_js": js,
+        "global_reference_top1_disagreement": (
+            global_values.argmax(axis=1) != reference.argmax(axis=1)
+        ).astype(float),
+    }
+    for name in GATE_NUMERIC_FEATURES:
+        if name in values:
+            continue
+        values[name] = rows.get(name, pd.Series(np.nan, index=rows.index))
+    frame = pd.DataFrame(values, index=rows.index)
+    for name in GATE_CATEGORICAL_FEATURES:
+        frame[name] = frame[name].fillna("UNKNOWN").astype(str)
+    for name in GATE_NUMERIC_FEATURES:
+        frame[name] = pd.to_numeric(frame[name], errors="coerce")
+    return frame[[*GATE_NUMERIC_FEATURES, *GATE_CATEGORICAL_FEATURES]]
+
+
+def gate_targets(
+    actual: np.ndarray,
+    global_probabilities: np.ndarray,
+    correction: np.ndarray,
+) -> np.ndarray:
+    global_values = validate_probability_matrix(global_probabilities)
+    reference = apply_correction(global_values, correction, 0.5)
+    labels = np.asarray(actual, dtype=int)
+    if len(labels) != len(global_values):
+        raise ValueError("gate target rows are misaligned")
+    positions = np.arange(len(labels))
+    utility = np.log(np.clip(reference[positions, labels], 1e-12, 1))
+    utility -= np.log(np.clip(global_values[positions, labels], 1e-12, 1))
+    return (utility > 0).astype("int8")
+
+
+def _gate_preprocessor() -> ColumnTransformer:
+    categorical = Pipeline(
+        [
+            ("missing", SimpleImputer(strategy="most_frequent")),
+            (
+                "encode",
+                OneHotEncoder(
+                    handle_unknown="ignore",
+                    min_frequency=20,
+                    sparse_output=True,
+                ),
+            ),
+        ]
+    )
+    return ColumnTransformer(
+        [
+            (
+                "numeric",
+                SimpleImputer(strategy="median"),
+                list(GATE_NUMERIC_FEATURES),
+            ),
+            ("categorical", categorical, list(GATE_CATEGORICAL_FEATURES)),
+        ]
+    )
+
+
+def _gate_model(
+    *,
+    device: str,
+    n_estimators: int,
+    early_stopping: bool,
+) -> XGBClassifier:
+    return XGBClassifier(
+        objective="binary:logistic",
+        n_estimators=n_estimators,
+        learning_rate=0.03,
+        max_depth=3,
+        min_child_weight=100,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        reg_alpha=0.1,
+        reg_lambda=10.0,
+        tree_method="hist",
+        device=device,
+        eval_metric="logloss",
+        early_stopping_rounds=50 if early_stopping else None,
+        n_jobs=8,
+        random_state=737,
+    )
+
+
+def train_gate(
+    rows: pd.DataFrame,
+    global_probabilities: np.ndarray,
+    correction: np.ndarray,
+    *,
+    n_estimators: int,
+    tuning: tuple[pd.DataFrame, np.ndarray, np.ndarray] | None = None,
+) -> FittedGate:
+    labels = gate_targets(
+        rows["target"].to_numpy(),
+        global_probabilities,
+        correction,
+    )
+    if len(np.unique(labels)) < 2:
+        raise ValueError("gate training requires both utility classes")
+    preprocessor = _gate_preprocessor()
+    train_x = preprocessor.fit_transform(
+        gate_feature_frame(rows, global_probabilities, correction)
+    )
+    tune_x = None
+    tune_labels = None
+    if tuning is not None:
+        tune_rows, tune_global, tune_correction = tuning
+        tune_x = preprocessor.transform(
+            gate_feature_frame(tune_rows, tune_global, tune_correction)
+        )
+        tune_labels = gate_targets(
+            tune_rows["target"].to_numpy(),
+            tune_global,
+            tune_correction,
+        )
+    for device in ("cuda", "cpu"):
+        model = _gate_model(
+            device=device,
+            n_estimators=n_estimators,
+            early_stopping=tuning is not None,
+        )
+        arguments: dict[str, object] = {"verbose": False}
+        if tuning is not None:
+            arguments["eval_set"] = [(tune_x, tune_labels)]
+        try:
+            model.fit(train_x, labels, **arguments)
+            best_iteration = getattr(model, "best_iteration", None)
+            tree_count = (
+                int(best_iteration + 1)
+                if best_iteration is not None
+                else n_estimators
+            )
+            return FittedGate(preprocessor, model, tree_count, device)
+        except Exception:
+            if device == "cpu":
+                raise
+            gc.collect()
+    raise AssertionError("unreachable")
+
+
+def predict_context_gate(
+    fitted: FittedGate,
+    rows: pd.DataFrame,
+    global_probabilities: np.ndarray,
+    correction: np.ndarray,
+) -> np.ndarray:
+    transformed = fitted.preprocessor.transform(
+        gate_feature_frame(rows, global_probabilities, correction)
+    )
+    probabilities = np.asarray(fitted.model.predict_proba(transformed), dtype=float)
+    if probabilities.shape != (len(rows), 2):
+        raise ValueError("gate probabilities have invalid shape")
+    return probabilities[:, 1]
+
+
+def hard_safety_mask(rows: pd.DataFrame) -> tuple[np.ndarray, list[str | None]]:
+    required = ("count_support", "stand_support", "transition_support")
+    missing = [name for name in required if name not in rows]
+    if missing:
+        raise ValueError(f"missing hard safety support: {missing}")
+    count = pd.to_numeric(rows["count_support"], errors="coerce").to_numpy()
+    stand = pd.to_numeric(rows["stand_support"], errors="coerce").to_numpy()
+    transition = pd.to_numeric(
+        rows["transition_support"], errors="coerce"
+    ).to_numpy()
+    previous = (
+        rows.get("pa_prev_pitch_1", pd.Series("UNKNOWN", index=rows.index))
+        .fillna("UNKNOWN")
+        .astype(str)
+        .to_numpy()
+    )
+    reasons: list[str | None] = []
+    for count_value, stand_value, transition_value, previous_value in zip(
+        count, stand, transition, previous, strict=True
+    ):
+        if not np.isfinite([count_value, stand_value, transition_value]).all():
+            reasons.append("invalid_support")
+        elif count_value < 20:
+            reasons.append("count_support")
+        elif stand_value < 20:
+            reasons.append("stand_support")
+        elif previous_value != "UNKNOWN" and transition_value < 20:
+            reasons.append("transition_support")
+        else:
+            reasons.append(None)
+    return np.array([reason is None for reason in reasons]), reasons
 
 
 def _base_margin(probabilities: np.ndarray) -> np.ndarray:
@@ -235,6 +506,176 @@ def apply_correction(
     )
 
 
+def reliability_score(
+    support: int,
+    p_all: float,
+    p_recent: float,
+) -> float:
+    if support < 0 or not 0 <= p_all <= 1 or not 0 <= p_recent <= 1:
+        raise ValueError("invalid reliability inputs")
+    return float(
+        0.5
+        * support
+        / (support + 1_000)
+        * min(p_all, p_recent)
+    )
+
+
+def compute_pitcher_reliability(
+    rows: pd.DataFrame,
+    global_probabilities: np.ndarray,
+    reference_probabilities: np.ndarray,
+    *,
+    recent_days: int = 90,
+    samples: int = 500,
+    seed: int = 737,
+) -> dict[int, dict[str, float | int]]:
+    if recent_days <= 0:
+        raise ValueError("recent_days must be positive")
+    global_values = validate_probability_matrix(global_probabilities)
+    reference_values = validate_probability_matrix(reference_probabilities)
+    if len(rows) != len(global_values) or reference_values.shape != global_values.shape:
+        raise ValueError("reliability rows and probabilities are misaligned")
+    if rows.empty:
+        return {}
+
+    result: dict[int, dict[str, float | int]] = {}
+    dates = pd.to_datetime(rows["game_date"], errors="raise")
+    ids = rows["pitcher_id"].to_numpy(dtype=int)
+    actual = rows["target"].to_numpy(dtype=int)
+    games = rows["game_pk"].to_numpy()
+    for pitcher_id in sorted(set(ids)):
+        positions = np.flatnonzero(ids == pitcher_id)
+        latest = dates.iloc[positions].max().normalize()
+        recent_cutoff = latest - pd.Timedelta(days=recent_days - 1)
+        recent_positions = positions[
+            dates.iloc[positions].dt.normalize().to_numpy() >= recent_cutoff
+        ]
+        all_bootstrap = bootstrap_log_loss_gain(
+            games[positions],
+            actual[positions],
+            global_values[positions],
+            reference_values[positions],
+            samples=samples,
+            seed=seed + int(pitcher_id),
+        )
+        if len(recent_positions):
+            recent_bootstrap = bootstrap_log_loss_gain(
+                games[recent_positions],
+                actual[recent_positions],
+                global_values[recent_positions],
+                reference_values[recent_positions],
+                samples=samples,
+                seed=seed + int(pitcher_id) + 1,
+            )
+            p_recent = float(recent_bootstrap["improvementProbability"])
+        else:
+            recent_bootstrap = None
+            p_recent = 0.0
+        p_all = float(all_bootstrap["improvementProbability"])
+        support = int(len(positions))
+        result[int(pitcher_id)] = {
+            "n": support,
+            "supportCoefficient": float(support / (support + 1_000)),
+            "pAll": p_all,
+            "pRecent": p_recent,
+            "reliability": reliability_score(support, p_all, p_recent),
+            "recentSupport": int(len(recent_positions)),
+            "allMeanGain": float(all_bootstrap["meanGain"]),
+            "recentMeanGain": (
+                float(recent_bootstrap["meanGain"])
+                if recent_bootstrap is not None
+                else 0.0
+            ),
+        }
+    return result
+
+
+def effective_residual_scale(
+    reliability: float,
+    context_gate: float,
+    *,
+    hard_safety_pass: bool,
+) -> float:
+    if not 0 <= reliability <= 0.5 or not 0 <= context_gate <= 1:
+        raise ValueError("invalid dynamic scale inputs")
+    return float(reliability * context_gate) if hard_safety_pass else 0.0
+
+
+def _js_divergence(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+    midpoint = (left + right) / 2
+    left_term = np.where(left > 0, left * np.log(left / midpoint), 0)
+    right_term = np.where(right > 0, right * np.log(right / midpoint), 0)
+    return 0.5 * (left_term.sum(axis=1) + right_term.sum(axis=1))
+
+
+def apply_dynamic_correction(
+    global_probabilities: np.ndarray,
+    correction: np.ndarray,
+    scales: np.ndarray,
+    *,
+    js_cap: float = 0.05,
+    probability_shift_cap: float = 0.20,
+    iterations: int = 24,
+) -> tuple[np.ndarray, np.ndarray, list[str | None]]:
+    global_values = validate_probability_matrix(global_probabilities)
+    residual_values = np.asarray(correction, dtype=float)
+    requested = np.asarray(scales, dtype=float)
+    if residual_values.shape != global_values.shape or requested.shape != (
+        len(global_values),
+    ):
+        raise ValueError("dynamic correction inputs are misaligned")
+    if (
+        not np.isfinite(residual_values).all()
+        or not np.isfinite(requested).all()
+        or (requested < 0).any()
+        or (requested > 0.5).any()
+    ):
+        raise ValueError("dynamic correction inputs are invalid")
+    if js_cap <= 0 or probability_shift_cap <= 0 or iterations <= 0:
+        raise ValueError("dynamic correction caps must be positive")
+
+    def probabilities(values: np.ndarray) -> np.ndarray:
+        logits = _base_margin(global_values) + values[:, None] * residual_values
+        logits -= logits.max(axis=1, keepdims=True)
+        exp = np.exp(logits)
+        return exp / exp.sum(axis=1, keepdims=True)
+
+    initial = probabilities(requested)
+    js_failed = _js_divergence(global_values, initial) > js_cap
+    shift_failed = (
+        np.abs(initial - global_values).max(axis=1) > probability_shift_cap
+    )
+    capped = js_failed | shift_failed
+    low = np.zeros_like(requested)
+    high = requested.copy()
+    low[~capped] = requested[~capped]
+    for _ in range(iterations):
+        middle = (low + high) / 2
+        candidate = probabilities(middle)
+        failed = (_js_divergence(global_values, candidate) > js_cap) | (
+            np.abs(candidate - global_values).max(axis=1)
+            > probability_shift_cap
+        )
+        low = np.where(failed, low, middle)
+        high = np.where(failed, middle, high)
+    applied = np.where(capped, low, requested)
+    output = validate_probability_matrix(probabilities(applied))
+    reasons = [
+        (
+            "js_and_probability_shift"
+            if js and shift
+            else "js"
+            if js
+            else "probability_shift"
+            if shift
+            else None
+        )
+        for js, shift in zip(js_failed, shift_failed, strict=True)
+    ]
+    return output, applied, reasons
+
+
 def diagnostics(actual: np.ndarray, probabilities: np.ndarray) -> dict[str, object]:
     return evaluate_diagnostics(
         actual,
@@ -258,7 +699,9 @@ def residual_passes(
         and candidate_metrics["accuracy"] >= global_metrics["accuracy"] - 0.005
         and candidate_metrics["macroF1"] >= global_metrics["macroF1"] - 0.005
         and not major_zero_recall
-        and candidate_metrics["majorityPredictionGap"] <= 0.20
+        and candidate_metrics["maxClassShareError"] <= 0.20
+        and candidate_metrics["totalVariationDistance"] <= 0.20
+        and candidate_metrics["maxClassCalibrationError"] <= 0.10
     )
 
 
@@ -333,16 +776,30 @@ def pitcher_metrics_pass(
     return (
         candidate_metrics["logLoss"] < global_metrics["logLoss"]
         and candidate_metrics["accuracy"] >= global_metrics["accuracy"] - 0.005
+        and candidate_metrics["macroF1"] >= global_metrics["macroF1"] - 0.005
         and not major_zero_recall
+        and candidate_metrics.get("maxClassShareError", float("inf")) <= 0.20
+        and candidate_metrics.get("totalVariationDistance", float("inf")) <= 0.20
+        and candidate_metrics.get("maxClassCalibrationError", float("inf"))
+        <= 0.10
     )
 
 
 def provisional_scale(
     gap_days: int,
     *,
+    base_reliability: float = 0.5,
     half_life_days: int = 365,
-    cap: float = 0.25,
+    cap: float = 0.15,
 ) -> float:
-    if gap_days < 0 or half_life_days <= 0 or not 0 <= cap <= 1:
+    if (
+        gap_days < 0
+        or half_life_days <= 0
+        or not 0 <= cap <= 0.5
+        or not 0 <= base_reliability <= 0.5
+    ):
         raise ValueError("invalid provisional decay parameters")
-    return min(cap, float(np.exp(-np.log(2) * gap_days / half_life_days)))
+    return float(
+        min(cap, base_reliability)
+        * np.exp(-np.log(2) * gap_days / half_life_days)
+    )

@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from oyarzabal.metrics import (
+    bootstrap_log_loss_gain,
     evaluate_diagnostics,
     evaluate_probabilities,
     validate_probability_matrix,
@@ -50,3 +51,66 @@ def test_diagnostics_expose_class_recall_and_prediction_distribution() -> None:
     assert diagnostics["perClass"]["B"]["recall"] == 0
     assert diagnostics["zeroRecallClasses"] == ["B"]
     assert diagnostics["majorityPredictionGap"] == pytest.approx(0.25)
+    assert diagnostics["classShareError"] == {
+        "A": pytest.approx(0.25),
+        "B": pytest.approx(-0.25),
+        "C": pytest.approx(0),
+    }
+    assert diagnostics["maxClassShareError"] == pytest.approx(0.25)
+    assert diagnostics["totalVariationDistance"] == pytest.approx(0.25)
+    assert diagnostics["classCalibrationError"] == {
+        "A": pytest.approx(0.05),
+        "B": pytest.approx(-0.05),
+        "C": pytest.approx(0),
+    }
+    assert diagnostics["maxClassCalibrationError"] == pytest.approx(0.05)
+
+
+def test_probability_calibration_error_detects_hidden_argmax_error() -> None:
+    diagnostics = evaluate_diagnostics(
+        [0, 1, 0, 1],
+        np.array(
+            [
+                [0.90, 0.10],
+                [0.49, 0.51],
+                [0.90, 0.10],
+                [0.49, 0.51],
+            ]
+        ),
+        labels=[0, 1],
+        names=["A", "B"],
+    )
+
+    assert diagnostics["maxClassShareError"] == 0
+    assert diagnostics["totalVariationDistance"] == 0
+    assert diagnostics["maxClassCalibrationError"] > 0
+
+
+def test_game_bootstrap_is_grouped_reproducible_and_detects_gain() -> None:
+    actual = np.array([0, 1, 0, 1])
+    reference = np.full((4, 2), 0.5)
+    candidate = np.array(
+        [[0.8, 0.2], [0.2, 0.8], [0.7, 0.3], [0.3, 0.7]]
+    )
+
+    first = bootstrap_log_loss_gain(
+        [10, 10, 20, 20],
+        actual,
+        reference,
+        candidate,
+        samples=50,
+        seed=7,
+    )
+    second = bootstrap_log_loss_gain(
+        [10, 10, 20, 20],
+        actual,
+        reference,
+        candidate,
+        samples=50,
+        seed=7,
+    )
+
+    assert first == second
+    assert first["games"] == 2
+    assert first["improvementProbability"] > 0.98
+    assert first["meanGain"] > 0
