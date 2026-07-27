@@ -20,16 +20,22 @@ V1과 V2는 포심·싱커·커터·슬라이더·커브·체인지업 taxonomy�
 taxonomy이므로 V2→V3의 숫자 차이에는 모델 개선뿐 아니라 label 변경 효과가
 섞여 있다.
 
+## Accuracy 막대 비교
+
+평가 표본과 taxonomy가 다른 버전은 순수한 모델 개선량으로 직접 비교하지
+않는다. 아래 막대는 기록된 주요 평가의 위치를 빠르게 확인하기 위한 것이다.
+
+```mermaid
+xychart-beta
+    title "주요 버전 Accuracy"
+    x-axis ["V1 OOF", "V2 2025", "V3 2025", "V5 Global", "V5 Final"]
+    y-axis "Accuracy (%)" 45 --> 50
+    bar [47.39, 47.78, 48.87, 47.62, 47.73]
+```
+
 초기 13명·7종 MVP와 누수 방지 피처 전환 단계는 완결된 평가 지표가 남아 있지
 않아 별도 성능 리포트를 만들지 않았다. 해당 사실과 실패·수정 이력은
 [`docs/EXPERIMENT_LOG.md`](../docs/EXPERIMENT_LOG.md)에 보존되어 있다.
-
-## 현재 판단
-
-현재 모델의 문제와 권장 게이트는
-[`CURRENT_MODEL_REVIEW.md`](CURRENT_MODEL_REVIEW.md)에 정리했다. 핵심은 전역
-포심 과대예측은 사라졌지만, residual이 일부 투수의 특정 구종을 과도하게
-선택하는 국소 쏠림이 남아 있다는 것이다.
 
 ## 공통 리포트 형식
 
