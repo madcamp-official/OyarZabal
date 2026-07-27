@@ -71,7 +71,7 @@ export interface Game {
 }
 
 export interface Manifest {
-  schemaVersion: 3;
+  schemaVersion: 4;
   generatedAt: string;
   caveat: string;
   finalModel: string;

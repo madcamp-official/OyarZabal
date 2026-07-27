@@ -8,25 +8,25 @@ const prediction = {
   confidence: 0.7,
   probabilities: {
     FOUR_SEAM: 0.7,
-    SINKER: 0.1,
-    CUTTER: 0.05,
+    MOVING_FASTBALL: 0.1,
     SLIDER: 0.1,
     CURVE: 0.03,
     CHANGEUP: 0.02,
+    SPLITTER_FORK: 0.05,
   },
 };
 const manifest = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   generatedAt: "2026-07-24",
   caveat: "showcase",
   finalModel: "xgboost",
   pitchGroups: {
     FOUR_SEAM: "포심",
-    SINKER: "싱커/투심",
-    CUTTER: "커터",
-    SLIDER: "슬라이더",
-    CURVE: "커브",
+    MOVING_FASTBALL: "무빙 패스트볼",
+    SLIDER: "슬라이더 계열",
+    CURVE: "커브 계열",
     CHANGEUP: "체인지업",
+    SPLITTER_FORK: "스플리터·포크",
   },
   models: {
     final: "균형 XGBoost",
@@ -65,22 +65,22 @@ const game = {
         logLoss: 0.3,
         actualDistribution: {
           FOUR_SEAM: 1,
-          SINKER: 0,
-          CUTTER: 0,
+          MOVING_FASTBALL: 0,
           SLIDER: 0,
           CURVE: 0,
           CHANGEUP: 0,
+          SPLITTER_FORK: 0,
         },
         predictedDistribution: {
           FOUR_SEAM: 1,
-          SINKER: 0,
-          CUTTER: 0,
+          MOVING_FASTBALL: 0,
           SLIDER: 0,
           CURVE: 0,
           CHANGEUP: 0,
+          SPLITTER_FORK: 0,
         },
         perClass: Object.fromEntries(
-          ["FOUR_SEAM", "SINKER", "CUTTER", "SLIDER", "CURVE", "CHANGEUP"].map(
+          ["FOUR_SEAM", "MOVING_FASTBALL", "SLIDER", "CURVE", "CHANGEUP", "SPLITTER_FORK"].map(
             (group) => [
               group,
               { precision: group === "FOUR_SEAM" ? 1 : 0, recall: group === "FOUR_SEAM" ? 1 : 0, f1: group === "FOUR_SEAM" ? 1 : 0, support: group === "FOUR_SEAM" ? 1 : 0 },
@@ -107,7 +107,7 @@ const game = {
     recentPitches: [],
     modelSource: {
       type: "hybrid",
-      label: "Pitcher + Global Hybrid",
+      label: "Pitcher Personalizer + Global",
       globalWeight: 0.25,
       specialistWeight: 0.75,
     },
@@ -134,6 +134,6 @@ test("keeps the actual pitch hidden until reveal", async () => {
   expect(screen.getByText("MODEL REPORT")).toBeInTheDocument();
   expect(screen.getByText("구종별 진단")).toBeInTheDocument();
   expect(screen.getAllByText("균형 XGBoost")).toHaveLength(2);
-  expect(screen.getByText("Pitcher + Global Hybrid")).toBeInTheDocument();
-  expect(screen.getByText("Global 25% · Specialist 75%")).toBeInTheDocument();
+  expect(screen.getByText("Pitcher Personalizer + Global")).toBeInTheDocument();
+  expect(screen.getByText("Personalizer shrinkage 75%")).toBeInTheDocument();
 });

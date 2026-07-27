@@ -56,3 +56,61 @@ Git revision:
   데이터가 0구로 보이던 문제를 별도 `pitcher_id`로 수정했다.
 - 중요 수정: 경기 파일에만 존재하는 `bat_score_diff` 때문에 과거 행의
   `score_diff`가 전부 결측이 되던 문제를 행별 점수 차 fallback으로 수정했다.
+
+## 2026-07-25 — PA/Game 문맥과 personalizer 구현
+
+- 타석 내 구종별 사용 횟수, 구종 다양성, 첫 구종, 타석 내 연속 횟수와
+  3개 구종 계열 비율을 point-in-time 피처로 추가했다.
+- 현재 경기 구종 사용률을 시즌 사용률로 smoothing하고 시즌 대비 변화량을
+  추가했다.
+- Global 후보를 `none/light/sqrt × depth 4/6`으로 제한하고 early stopping
+  상한을 2,000 trees, patience를 75 rounds로 조정했다.
+- weighted 학습 후보도 early stopping은 실제 평가 분포의 unweighted
+  `mlogloss`를 사용하도록 수정했다.
+- 독립 Specialist XGBoost를 투수별 shrunk logit-bias personalizer로
+  교체했다. 2024에서 선택하고 2025를 선택에 사용하지 않는 평가로 남겼다.
+- 작은 4개년 합성 데이터로 후보 선택, 2025 평가, 최종 모델과 schema v2
+  registry 저장 경로를 smoke 검증했다.
+- 전체 MLB 재학습 결과와 새 쇼케이스 지표는 실제 장시간 실행 완료 후 별도
+  항목으로 기록한다.
+
+## 2026-07-25 — MLB 전체 재학습 및 2025 최종 게이트
+
+- 2,916,065구로 두 차례 재학습했으며 선택 결과와 지표가 동일하게 재현됐다.
+- 2024 후보 선택에서는 `global-sqrt-d6-m8`을 Log Loss와 Macro F1 모두에서
+  이긴 후보가 없어 기존 구조를 유지했다. 최종 tree 수는 650에서 1,779로
+  늘어 early-stopping 상한 문제를 해소했다.
+- 선택에 사용하지 않은 2025 725,576구에서 Accuracy 0.4778, Macro F1
+  0.4620, Log Loss 1.1413, Top-3 Accuracy 0.9164를 기록했다.
+- Nestor Cortes personalizer는 2024 내부 검증을 통과했지만 2025에서 Global
+  대비 Accuracy가 0.4481에서 0.4332로, Macro F1이 0.2376에서 0.2368로
+  하락했다. Log Loss는 1.1839에서 1.1698로 개선됐지만 전체 배포 게이트를
+  만족하지 못해 `test_validation_failed`로 비활성화했다.
+- 파일럿 5명 중 최종 활성 personalizer는 0명이다. 실패 결과는 삭제하지 않고
+  registry validation과 post-evaluation run artifact에 보존했다.
+
+## 2026-07-25 — 307구 쇼케이스 재생성
+
+- Final/Global: Accuracy 0.5016, Top-3 Accuracy 0.9381, Macro F1 0.4647.
+- Final Log Loss 1.0667, Global Log Loss 1.0678로 personalizer가 확률 품질만
+  소폭 개선했고 argmax 예측은 바꾸지 않았다.
+- 13명 캐시 기반 쇼케이스에서는 Tommy Kahnle personalizer만 선택됐지만,
+  이는 MLB-wide 2025 holdout 배포 판단과 분리된 데모 결과다.
+
+## 2026-07-25 — 구종군 재정의 및 전체 재학습
+
+- target을 포심(`FF`), 무빙 패스트볼(`SI/FT/FC`), 슬라이더 계열
+  (`SL/ST/SV`), 커브 계열(`CU/KC/CS`), 체인지업(`CH`), 스플리터·포크
+  (`FS/FO`)로 재정의했다. `KN/SC`와 결측·미분류는 target에서 제외한다.
+- 기존 클래스 의미와 순서가 달라져 MLB-wide 모델을 재사용하지 않고
+  2,990,491구로 다시 학습했다. 선택 모델은 `global-sqrt-d6-m8`, 최종 tree
+  수는 1,898, temperature는 1.0465다.
+- 2025 750,581구에서 Accuracy 0.4887, Top-3 Accuracy 0.9308, Macro F1
+  0.4724, Log Loss 1.1103을 기록했고 6개 클래스 모두 recall이 0보다 컸다.
+- 파일럿 5명 중 활성 personalizer는 0명이다. Cole은 2025 검증 행 부재,
+  Flaherty와 Cortes는 내부 검증 실패, Treinen과 Kahnle은 데이터 자격
+  미달이었다.
+- schema v4 쇼케이스는 Accuracy 0.5375, Top-3 Accuracy 0.9544, Macro F1
+  0.4610, Log Loss 1.0012를 기록했다. 해당 경기에는 스플리터·포크가 0구여서
+  클래스별 성능 판단에 사용할 수 없고, 이전 taxonomy 지표와 직접 비교하지
+  않는다.

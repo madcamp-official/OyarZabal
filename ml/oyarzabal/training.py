@@ -18,7 +18,10 @@ import pandas as pd
 from .features import prepare_pitch_rows
 from .hybrid import (
     RegistryEntry,
-    select_blend_weight,
+    apply_logit_bias,
+    fit_logit_bias,
+    personalizer_passes,
+    select_personalizer_strength,
     serialize_registry_entry,
     specialist_eligibility,
 )
@@ -28,6 +31,7 @@ from .modeling import (
     apply_temperature,
     fit_temperature,
     predict_candidate,
+    select_candidate,
     train_candidate_with_tuning,
     train_final_candidate,
 )
@@ -42,6 +46,14 @@ PILOT_PITCHERS = {
     641482: "Nestor Cortes",
 }
 GLOBAL_SPEC = CandidateSpec("global", "sqrt", 6, 8)
+
+
+def global_specs() -> tuple[CandidateSpec, ...]:
+    return tuple(
+        CandidateSpec("global", weight_mode, depth, 8)
+        for weight_mode in ("none", "light", "sqrt")
+        for depth in (4, 6)
+    )
 
 
 def specialist_specs() -> tuple[CandidateSpec, ...]:
@@ -111,62 +123,79 @@ def train_hybrid(
     pilot_pitchers: dict[int, str] = PILOT_PITCHERS,
 ) -> dict[str, object]:
     folds = validation_folds(rows)
-    global_predictions = []
-    global_actual = []
-    global_trees = []
-    specialist_predictions: dict[tuple[int, str], list[np.ndarray]] = defaultdict(list)
-    specialist_global: dict[int, list[np.ndarray]] = defaultdict(list)
-    specialist_actual: dict[int, list[np.ndarray]] = defaultdict(list)
-    specialist_trees: dict[tuple[int, str], list[int]] = defaultdict(list)
+    specs = global_specs()
+    global_predictions: dict[int, dict[str, np.ndarray]] = {}
+    global_actual: dict[int, np.ndarray] = {}
+    global_trees: dict[str, list[int]] = defaultdict(list)
+    evaluations: dict[int, pd.DataFrame] = {}
     eligibility = {
-        pitcher_id: specialist_eligibility(rows[rows["pitcher_id"] == pitcher_id])
+        pitcher_id: specialist_eligibility(
+            rows[
+                (rows["pitcher_id"] == pitcher_id)
+                & (rows["game_date"].dt.year < 2025)
+            ]
+        )
         for pitcher_id in pilot_pitchers
     }
 
-    for _year, train_mask, evaluation_mask in folds:
+    for year, train_mask, evaluation_mask in folds:
         assert_safe(snapshot(Path.cwd()))
         train = rows[train_mask]
         evaluation = rows[evaluation_mask]
-        global_model, trees = train_candidate_with_tuning(train, GLOBAL_SPEC)
-        global_fold = predict_candidate(global_model, evaluation, temperature=1)
-        global_predictions.append(global_fold)
-        global_actual.append(evaluation["target"].to_numpy())
-        global_trees.append(trees)
-
-        for pitcher_id in pilot_pitchers:
-            if not eligibility[pitcher_id]["eligible"]:
-                continue
-            pitcher_train = train[train["pitcher_id"] == pitcher_id]
-            pitcher_evaluation = evaluation[evaluation["pitcher_id"] == pitcher_id]
-            if pitcher_evaluation.empty or len(pitcher_train) < 2:
-                continue
-            specialist_global[pitcher_id].append(
-                predict_candidate(global_model, pitcher_evaluation, temperature=1)
+        evaluations[year] = evaluation
+        global_actual[year] = evaluation["target"].to_numpy()
+        global_predictions[year] = {}
+        for spec in specs:
+            model, trees = train_candidate_with_tuning(train, spec)
+            global_predictions[year][spec.name] = predict_candidate(
+                model, evaluation, temperature=1
             )
-            specialist_actual[pitcher_id].append(
-                pitcher_evaluation["target"].to_numpy()
-            )
-            for spec in specialist_specs():
-                specialist_model, tree_count = train_candidate_with_tuning(
-                    pitcher_train, spec, n_estimators=500
-                )
-                specialist_predictions[(pitcher_id, spec.name)].append(
-                    predict_candidate(
-                        specialist_model, pitcher_evaluation, temperature=1
-                    )
-                )
-                specialist_trees[(pitcher_id, spec.name)].append(tree_count)
-                del specialist_model
-                gc.collect()
-        del global_model
-        gc.collect()
+            global_trees[spec.name].append(trees)
+            del model
+            gc.collect()
 
     registry: dict[int, RegistryEntry] = {}
     validations = {}
-    global_actual_values = np.concatenate(global_actual)
-    global_raw = np.concatenate(global_predictions)
-    global_temperature = fit_temperature(global_actual_values, global_raw)
-    selected_specs: dict[int, CandidateSpec] = {}
+    tuning_candidates = []
+    for spec in specs:
+        raw = global_predictions[2024][spec.name]
+        temperature = fit_temperature(global_actual[2024], raw)
+        probabilities = apply_temperature(raw, temperature)
+        tuning_candidates.append(
+            {
+                "name": spec.name,
+                "spec": {
+                    "featureSet": spec.feature_set,
+                    "weightMode": spec.weight_mode,
+                    "maxDepth": spec.max_depth,
+                    "minChildWeight": spec.min_child_weight,
+                },
+                "temperature": temperature,
+                "metrics": _metrics(global_actual[2024], probabilities),
+                "bestIterations": global_trees[spec.name],
+            }
+        )
+
+    reference = next(
+        candidate
+        for candidate in tuning_candidates
+        if candidate["name"] == GLOBAL_SPEC.name
+    )
+    selected = select_candidate(
+        reference["metrics"],
+        [candidate for candidate in tuning_candidates if candidate is not reference],
+    )
+    accepted_global = selected is not None
+    selected = selected or reference
+    selected_spec = next(spec for spec in specs if spec.name == selected["name"])
+    global_temperature = float(selected["temperature"])
+    tuning_global = apply_temperature(
+        global_predictions[2024][selected_spec.name], global_temperature
+    )
+    test_global = apply_temperature(
+        global_predictions[2025][selected_spec.name], global_temperature
+    )
+
     for pitcher_id, name in pilot_pitchers.items():
         if not eligibility[pitcher_id]["eligible"]:
             registry[pitcher_id] = RegistryEntry(
@@ -177,107 +206,146 @@ def train_hybrid(
                 "eligibility": eligibility[pitcher_id],
             }
             continue
-        if not specialist_actual[pitcher_id]:
+
+        tuning_positions = np.flatnonzero(
+            evaluations[2024]["pitcher_id"].to_numpy() == pitcher_id
+        )
+        test_positions = np.flatnonzero(
+            evaluations[2025]["pitcher_id"].to_numpy() == pitcher_id
+        )
+        if not len(tuning_positions) or not len(test_positions):
             registry[pitcher_id] = RegistryEntry(
                 pitcher_id, False, 0, "", reason="missing_validation_rows"
             )
             continue
-        actual = np.concatenate(specialist_actual[pitcher_id])
-        global_values = apply_temperature(
-            np.concatenate(specialist_global[pitcher_id]), global_temperature
+
+        pitcher_tuning = evaluations[2024].iloc[tuning_positions]
+        dates = np.array(
+            sorted(pitcher_tuning["game_date"].dt.normalize().unique())
         )
-        candidate_results = []
-        for spec in specialist_specs():
-            specialist_raw = np.concatenate(
-                specialist_predictions[(pitcher_id, spec.name)]
+        if len(dates) < 2:
+            registry[pitcher_id] = RegistryEntry(
+                pitcher_id, False, 0, "", reason="missing_personalizer_split"
             )
-            temperature = fit_temperature(actual, specialist_raw)
-            selection = select_blend_weight(
-                actual,
-                global_values,
-                apply_temperature(specialist_raw, temperature),
-            )
-            candidate_results.append(
-                {"spec": spec, "temperature": temperature, "selection": selection}
-            )
-        accepted = [
-            candidate
-            for candidate in candidate_results
-            if candidate["selection"]["accepted"]
-        ]
-        selected = (
-            min(
-                accepted,
-                key=lambda candidate: (
-                    candidate["selection"]["metrics"]["logLoss"],
-                    -candidate["selection"]["metrics"]["macroF1"],
-                ),
-            )
-            if accepted
+            continue
+        cutoff = dates[max(1, min(len(dates) - 1, int(len(dates) * 0.6)))]
+        calibration_mask = (
+            pitcher_tuning["game_date"].dt.normalize().to_numpy() < cutoff
+        )
+        evaluation_mask = ~calibration_mask
+        selection = select_personalizer_strength(
+            global_actual[2024][tuning_positions][calibration_mask],
+            tuning_global[tuning_positions][calibration_mask],
+            global_actual[2024][tuning_positions][evaluation_mask],
+            tuning_global[tuning_positions][evaluation_mask],
+        )
+        selected_on_validation = bool(selection["accepted"])
+        strength = (
+            float(selection["personalizerStrength"])
+            if selected_on_validation
             else None
         )
-        enabled = selected is not None
-        selected_spec = selected["spec"] if selected else None
-        specialist_temperature = selected["temperature"] if selected else 1
-        selection = selected["selection"] if selected else None
-        model_name = f"specialist-{pitcher_id}.pkl" if enabled else ""
-        if selected_spec:
-            selected_specs[pitcher_id] = selected_spec
+
+        test_global_metrics = _metrics(
+            global_actual[2025][test_positions],
+            test_global[test_positions],
+        )
+        test_metrics = test_global_metrics
+        deployment_bias = None
+        effective_weight = 0.0
+        if strength is not None:
+            evaluation_bias = fit_logit_bias(
+                global_actual[2024][tuning_positions],
+                tuning_global[tuning_positions],
+                prior_strength=strength,
+            )
+            test_metrics = _metrics(
+                global_actual[2025][test_positions],
+                apply_logit_bias(test_global[test_positions], evaluation_bias),
+            )
+        accepted_on_test = (
+            strength is not None
+            and personalizer_passes(test_global_metrics, test_metrics)
+        )
+        if accepted_on_test and strength is not None:
+            deployment_actual = np.concatenate(
+                [
+                    global_actual[2024][tuning_positions],
+                    global_actual[2025][test_positions],
+                ]
+            )
+            deployment_probabilities = np.concatenate(
+                [
+                    tuning_global[tuning_positions],
+                    test_global[test_positions],
+                ]
+            )
+            deployment_bias = fit_logit_bias(
+                deployment_actual,
+                deployment_probabilities,
+                prior_strength=strength,
+            )
+            effective_weight = len(deployment_actual) / (
+                len(deployment_actual) + strength
+            )
+
         registry[pitcher_id] = RegistryEntry(
             pitcher_id=pitcher_id,
-            enabled=enabled,
-            specialist_weight=(
-                float(selection["specialistWeight"]) if selection else 0
-            ),
-            model=model_name,
+            enabled=accepted_on_test,
+            specialist_weight=float(effective_weight),
+            model="logit-bias" if accepted_on_test else "",
             data_cutoff=rows["game_date"].max().date().isoformat(),
-            reason=None if enabled else "validation_failed",
-            temperature=specialist_temperature,
-            spec=selected_spec.name if selected_spec else None,
+            reason=(
+                None
+                if accepted_on_test
+                else (
+                    "test_validation_failed"
+                    if selected_on_validation
+                    else "validation_failed"
+                )
+            ),
+            spec="pitcher-logit-bias" if accepted_on_test else None,
+            logit_bias=(
+                tuple(float(value) for value in deployment_bias)
+                if deployment_bias is not None
+                else None
+            ),
+            personalizer_strength=strength if accepted_on_test else None,
         )
         validations[str(pitcher_id)] = {
             "name": name,
             "eligibility": eligibility[pitcher_id],
-            "selectedSpec": selected_spec.name if selected_spec else None,
-            "candidates": [
-                {
-                    "spec": candidate["spec"].name,
-                    "temperature": candidate["temperature"],
-                    "selection": candidate["selection"],
-                }
-                for candidate in candidate_results
-            ],
+            "selectionYear": 2024,
+            "testYear": 2025,
+            "selection": selection,
+            "acceptedOnTest": accepted_on_test,
+            "testGlobalMetrics": test_global_metrics,
+            "testMetrics": test_metrics,
         }
 
-    global_tree_count = int(np.median(global_trees))
-    global_model = train_final_candidate(rows, GLOBAL_SPEC, global_tree_count)
+    global_tree_count = int(np.median(global_trees[selected_spec.name]))
+    global_model = train_final_candidate(rows, selected_spec, global_tree_count)
     _atomic_pickle(model_directory / "global.pkl", global_model)
     del global_model
     gc.collect()
 
-    for pitcher_id, entry in registry.items():
-        if not entry.enabled:
-            continue
-        pitcher_rows = rows[rows["pitcher_id"] == pitcher_id]
-        spec = selected_specs[pitcher_id]
-        tree_count = int(np.median(specialist_trees[(pitcher_id, spec.name)]))
-        model = train_final_candidate(pitcher_rows, spec, tree_count)
-        _atomic_pickle(model_directory / entry.model, model)
-        del model
-        gc.collect()
-
-    global_oof = apply_temperature(global_raw, global_temperature)
     result = {
-        "schemaVersion": 1,
+        "schemaVersion": 3,
+        "pitchGroups": [str(group) for group in PITCH_GROUPS],
         "generatedAt": datetime.now(UTC).isoformat(),
         "dataCutoff": rows["game_date"].max().date().isoformat(),
         "rows": len(rows),
         "global": {
             "model": "global.pkl",
+            "selectedSpec": selected_spec.name,
             "treeCount": global_tree_count,
             "temperature": global_temperature,
             "features": "id-independent",
-            "metrics": _metrics(global_actual_values, global_oof),
+            "selectionYear": 2024,
+            "testYear": 2025,
+            "acceptedCandidate": accepted_global,
+            "tuningCandidates": tuning_candidates,
+            "metrics": _metrics(global_actual[2025], test_global),
         },
         "specialists": {
             str(pitcher_id): serialize_registry_entry(

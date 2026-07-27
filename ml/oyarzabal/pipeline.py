@@ -17,17 +17,18 @@ import pandas as pd
 from .features import chronological_split, group_names, prepare_pitch_rows
 from .hybrid import (
     RegistryEntry,
-    blend_by_pitcher,
-    select_blend_weight,
+    fit_logit_bias,
+    personalize_by_pitcher,
+    select_personalizer_strength,
     serialize_registry_entry,
     specialist_eligibility,
 )
 from .metrics import evaluate_diagnostics
 from .modeling import (
-    CandidateSpec,
     apply_temperature,
     fit_temperature,
     predict_candidate,
+    select_candidate,
     train_candidate_with_tuning,
     train_final_candidate,
 )
@@ -42,7 +43,7 @@ from .taxonomy import (
     normalize_group_probabilities,
     serialize_probabilities,
 )
-from .training import GLOBAL_SPEC, PILOT_PITCHERS, specialist_specs
+from .training import GLOBAL_SPEC, PILOT_PITCHERS, global_specs
 
 DEFAULT_SOURCE = Path("/root/workspace/pitchpredict-smoke-test")
 GAME_PK = 775300
@@ -250,32 +251,54 @@ def _pregame_hybrid(
     history: pd.DataFrame, game: pd.DataFrame
 ) -> tuple[np.ndarray, np.ndarray, list[dict[str, object]], dict[str, object]]:
     training, validation = chronological_split(history)
-    global_validation_model, global_trees = train_candidate_with_tuning(
-        training, GLOBAL_SPEC
+    global_candidates = []
+    for spec in global_specs():
+        model, trees = train_candidate_with_tuning(training, spec)
+        raw = predict_candidate(model, validation, temperature=1)
+        temperature = fit_temperature(validation["target"].to_numpy(), raw)
+        probabilities = apply_temperature(raw, temperature)
+        global_candidates.append(
+            {
+                "name": spec.name,
+                "spec": spec,
+                "treeCount": trees,
+                "temperature": temperature,
+                "probabilities": probabilities,
+                "metrics": _diagnostics(
+                    validation["target"].to_numpy(), probabilities
+                ),
+            }
+        )
+        del model
+        gc.collect()
+
+    reference = next(
+        candidate
+        for candidate in global_candidates
+        if candidate["name"] == GLOBAL_SPEC.name
     )
-    global_validation_probabilities = predict_candidate(
-        global_validation_model, validation, temperature=1
+    selected = select_candidate(
+        reference["metrics"],
+        [candidate for candidate in global_candidates if candidate is not reference],
     )
-    global_temperature = fit_temperature(
-        validation["target"].to_numpy(), global_validation_probabilities
-    )
-    global_validation_probabilities = apply_temperature(
-        global_validation_probabilities, global_temperature
-    )
+    accepted_global = selected is not None
+    selected = selected or reference
+    selected_spec = selected["spec"]
+    global_trees = int(selected["treeCount"])
+    global_temperature = float(selected["temperature"])
+    global_validation_probabilities = selected["probabilities"]
+
     registry: dict[int, RegistryEntry] = {}
-    specialist_trees: dict[tuple[int, str], int] = {}
-    selected_specs: dict[int, CandidateSpec] = {}
     validation_results: dict[str, object] = {}
 
     for pitcher_id, name in PILOT_PITCHERS.items():
         pitcher_history = history[history["pitcher_id"] == pitcher_id]
         eligibility = specialist_eligibility(pitcher_history)
-        pitcher_training = training[training["pitcher_id"] == pitcher_id]
         pitcher_validation = validation[validation["pitcher_id"] == pitcher_id]
         if (
             not eligibility["eligible"]
             or pitcher_validation.empty
-            or pitcher_training["game_date"].dt.normalize().nunique() < 2
+            or pitcher_validation["game_date"].dt.normalize().nunique() < 2
         ):
             registry[pitcher_id] = RegistryEntry(
                 pitcher_id, False, 0, "", reason="eligibility_or_validation"
@@ -286,96 +309,57 @@ def _pregame_hybrid(
             }
             continue
         positions = validation.index.get_indexer(pitcher_validation.index)
-        candidates = []
-        for spec in specialist_specs():
-            specialist_model, tree_count = train_candidate_with_tuning(
-                pitcher_training, spec, n_estimators=500
-            )
-            probabilities = predict_candidate(
-                specialist_model, pitcher_validation, temperature=1
-            )
-            temperature = fit_temperature(
-                pitcher_validation["target"].to_numpy(), probabilities
-            )
-            selection = select_blend_weight(
-                pitcher_validation["target"].to_numpy(),
-                global_validation_probabilities[positions],
-                apply_temperature(probabilities, temperature),
-            )
-            candidates.append(
-                {"spec": spec, "temperature": temperature, "selection": selection}
-            )
-            specialist_trees[(pitcher_id, spec.name)] = tree_count
-            del specialist_model
-            gc.collect()
-        accepted = [
-            candidate
-            for candidate in candidates
-            if candidate["selection"]["accepted"]
-        ]
-        selected = (
-            min(
-                accepted,
-                key=lambda candidate: (
-                    candidate["selection"]["metrics"]["logLoss"],
-                    -candidate["selection"]["metrics"]["macroF1"],
-                ),
-            )
-            if accepted
+        dates = np.array(
+            sorted(pitcher_validation["game_date"].dt.normalize().unique())
+        )
+        cutoff = dates[max(1, min(len(dates) - 1, int(len(dates) * 0.6)))]
+        calibration_mask = (
+            pitcher_validation["game_date"].dt.normalize().to_numpy() < cutoff
+        )
+        evaluation_mask = ~calibration_mask
+        actual = pitcher_validation["target"].to_numpy()
+        probabilities = global_validation_probabilities[positions]
+        selection = select_personalizer_strength(
+            actual[calibration_mask],
+            probabilities[calibration_mask],
+            actual[evaluation_mask],
+            probabilities[evaluation_mask],
+        )
+        enabled = bool(selection["accepted"])
+        strength = (
+            float(selection["personalizerStrength"]) if enabled else None
+        )
+        bias = (
+            fit_logit_bias(actual, probabilities, prior_strength=strength)
+            if strength is not None
             else None
         )
-        enabled = selected is not None
-        selected_spec = selected["spec"] if selected else None
-        specialist_temperature = selected["temperature"] if selected else 1
-        selection = selected["selection"] if selected else None
-        if selected_spec:
-            selected_specs[pitcher_id] = selected_spec
+        effective_weight = (
+            len(actual) / (len(actual) + strength) if strength is not None else 0
+        )
         registry[pitcher_id] = RegistryEntry(
             pitcher_id,
             enabled,
-            float(selection["specialistWeight"]) if selection else 0,
-            f"pregame-specialist-{pitcher_id}" if enabled else "",
+            float(effective_weight),
+            "logit-bias" if enabled else "",
             data_cutoff=history["game_date"].max().date().isoformat(),
             reason=None if enabled else "validation_failed",
-            temperature=specialist_temperature,
-            spec=selected_spec.name if selected_spec else None,
+            spec="pitcher-logit-bias" if enabled else None,
+            logit_bias=(
+                tuple(float(value) for value in bias) if bias is not None else None
+            ),
+            personalizer_strength=strength,
         )
         validation_results[str(pitcher_id)] = {
             "name": name,
             "eligibility": eligibility,
-            "selectedSpec": selected_spec.name if selected_spec else None,
-            "candidates": [
-                {
-                    "spec": candidate["spec"].name,
-                    "temperature": candidate["temperature"],
-                    "selection": candidate["selection"],
-                }
-                for candidate in candidates
-            ],
+            "selection": selection,
         }
 
-    del global_validation_model
-    gc.collect()
-    global_model = train_final_candidate(history, GLOBAL_SPEC, global_trees)
+    global_model = train_final_candidate(history, selected_spec, global_trees)
     global_game = predict_candidate(global_model, game, temperature=global_temperature)
-    specialist_game: dict[int, np.ndarray] = {}
-    for pitcher_id, entry in registry.items():
-        if not entry.enabled or not (game["pitcher_id"] == pitcher_id).any():
-            continue
-        model = train_final_candidate(
-            history[history["pitcher_id"] == pitcher_id],
-            selected_specs[pitcher_id],
-            specialist_trees[(pitcher_id, selected_specs[pitcher_id].name)],
-        )
-        specialist_game[pitcher_id] = predict_candidate(
-            model,
-            game[game["pitcher_id"] == pitcher_id],
-            temperature=entry.temperature,
-        )
-        del model
-        gc.collect()
-    final_game, source_types = blend_by_pitcher(
-        game["pitcher_id"].to_numpy(), global_game, specialist_game, registry
+    final_game, source_types = personalize_by_pitcher(
+        game["pitcher_id"].to_numpy(), global_game, registry
     )
     model_sources = []
     for pitcher_id, source_type in zip(
@@ -387,7 +371,7 @@ def _pregame_hybrid(
             {
                 "type": source_type,
                 "label": (
-                    "Pitcher + Global Hybrid"
+                    "Pitcher Personalizer + Global"
                     if source_type == "hybrid"
                     else "MLB Global XGBoost"
                 ),
@@ -396,9 +380,18 @@ def _pregame_hybrid(
             }
         )
     selection_artifact = {
-        "globalSpec": GLOBAL_SPEC.name,
+        "globalSpec": selected_spec.name,
+        "globalCandidateAccepted": accepted_global,
         "globalTemperature": global_temperature,
-        "specialistSpecs": [spec.name for spec in specialist_specs()],
+        "globalCandidates": [
+            {
+                "name": candidate["name"],
+                "treeCount": candidate["treeCount"],
+                "temperature": candidate["temperature"],
+                "metrics": candidate["metrics"],
+            }
+            for candidate in global_candidates
+        ],
         "validation": validation_results,
         "specialists": {
             str(pitcher_id): serialize_registry_entry(
@@ -476,15 +469,15 @@ def build_demo(args: argparse.Namespace) -> None:
     _atomic_json(game_path, game_artifact)
     validation_metrics = {}
     manifest = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "generatedAt": generated_at,
         "evaluationMode": "historical_showcase",
         "caveat": game_artifact["caveat"],
         "dataScope": data_scope,
-        "finalModel": "global-specialist-hybrid",
+        "finalModel": "global-pitcher-personalizer",
         "pitchGroups": group_names(),
         "models": {
-            "final": "검증형 Global + Pitcher Hybrid",
+            "final": "검증형 Global + Pitcher Personalizer",
             "xgboost": "MLB Global XGBoost",
             "similarity": "PitchPredict Similarity",
             "baseline": "상황별 빈도 기준선",
@@ -496,7 +489,7 @@ def build_demo(args: argparse.Namespace) -> None:
                 for specialist in experiment["specialists"].values()
             ),
             "referenceName": GLOBAL_SPEC.name,
-            "selectedName": "global-specialist-hybrid",
+            "selectedName": "global-pitcher-personalizer",
             "folds": ["pregame-chronological-validation"],
             "candidates": experiment["validation"],
             "specialists": experiment["specialists"],

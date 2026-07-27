@@ -90,7 +90,7 @@ def candidate_specs() -> tuple[CandidateSpec, ...]:
         CandidateSpec(feature_set, weight_mode, max_depth, min_child_weight)
         for feature_set, weight_mode, max_depth, min_child_weight in product(
             ("legacy", "enriched"),
-            ("none", "sqrt"),
+            ("none", "light", "sqrt"),
             (4, 6),
             (3, 8),
         )
@@ -173,7 +173,7 @@ def _model(
         tree_method="hist",
         device=device,
         eval_metric="mlogloss",
-        early_stopping_rounds=45 if early_stopping else None,
+        early_stopping_rounds=75 if early_stopping else None,
         n_jobs=8,
         random_state=737,
     )
@@ -187,8 +187,7 @@ def _fit_with_fallback(
     *,
     x_tuning: Any | None = None,
     y_tuning: np.ndarray | None = None,
-    tuning_weights: np.ndarray | None = None,
-    n_estimators: int = 650,
+    n_estimators: int = 2_000,
     num_classes: int = len(PITCH_GROUPS),
 ) -> tuple[XGBClassifier, str]:
     early_stopping = x_tuning is not None
@@ -206,7 +205,6 @@ def _fit_with_fallback(
         }
         if early_stopping:
             fit_arguments["eval_set"] = [(x_tuning, y_tuning)]
-            fit_arguments["sample_weight_eval_set"] = [tuning_weights]
         try:
             model.fit(x_train, y_train, **fit_arguments)
             return model, device
@@ -260,9 +258,6 @@ def run_oof_experiment(rows: pd.DataFrame) -> dict[str, object]:
                     class_sample_weights(core["target"].to_numpy(), spec.weight_mode),
                     x_tuning=x_tuning,
                     y_tuning=tuning["target"].to_numpy(),
-                    tuning_weights=class_sample_weights(
-                        tuning["target"].to_numpy(), spec.weight_mode
-                    ),
                 )
                 probabilities = model.predict_proba(x_evaluation)
                 predictions[spec.name].append(probabilities)
@@ -346,7 +341,7 @@ def train_candidate_with_tuning(
     rows: pd.DataFrame,
     spec: CandidateSpec,
     *,
-    n_estimators: int = 650,
+    n_estimators: int = 2_000,
 ) -> tuple[FittedCandidate, int]:
     """Fit on a chronological core with an internal early-stopping tail."""
     core, tuning = _split_core_tuning(rows)
@@ -367,9 +362,6 @@ def train_candidate_with_tuning(
         class_sample_weights(core_labels, spec.weight_mode),
         x_tuning=x_tuning,
         y_tuning=tuning_labels,
-        tuning_weights=class_sample_weights(
-            tuning_labels, spec.weight_mode
-        ),
         n_estimators=n_estimators,
         num_classes=len(classes),
     )
@@ -396,14 +388,17 @@ def find_spec(name: str) -> CandidateSpec:
 
 def class_sample_weights(labels: np.ndarray, mode: str) -> np.ndarray:
     y = np.asarray(labels, dtype=int)
-    if mode == "none":
-        return np.ones(len(y), dtype="float32")
-    if mode != "sqrt":
+    exponents = {"none": 0.0, "light": 0.25, "sqrt": 0.5}
+    if mode not in exponents:
         raise ValueError(f"unknown class-weight mode: {mode}")
+    exponent = exponents[mode]
+    if exponent == 0:
+        return np.ones(len(y), dtype="float32")
     counts = np.bincount(y)
     present = counts > 0
     class_weights = np.ones(len(counts), dtype=float)
-    class_weights[present] = np.sqrt(len(y) / (int(present.sum()) * counts[present]))
+    imbalance = len(y) / (int(present.sum()) * counts[present])
+    class_weights[present] = imbalance**exponent
     weights = np.clip(class_weights[y], 0.5, 3.0)
     weights /= weights.mean()
     return weights.astype("float32")

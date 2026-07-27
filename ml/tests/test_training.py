@@ -1,6 +1,6 @@
 import pandas as pd
 import pytest
-from oyarzabal.training import specialist_specs, validation_folds
+from oyarzabal.training import global_specs, specialist_specs, validation_folds
 
 
 def test_validation_folds_are_strictly_time_ordered() -> None:
@@ -30,4 +30,13 @@ def test_specialist_candidate_matrix_is_deliberately_small() -> None:
     assert len(specs) == 4
     assert {spec.max_depth for spec in specs} == {3, 4}
     assert {spec.weight_mode for spec in specs} == {"none", "sqrt"}
+    assert {spec.min_child_weight for spec in specs} == {8}
+
+
+def test_global_candidate_matrix_focuses_on_weight_and_depth() -> None:
+    specs = global_specs()
+    assert len(specs) == 6
+    assert {spec.feature_set for spec in specs} == {"global"}
+    assert {spec.max_depth for spec in specs} == {4, 6}
+    assert {spec.weight_mode for spec in specs} == {"none", "light", "sqrt"}
     assert {spec.min_child_weight for spec in specs} == {8}

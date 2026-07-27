@@ -2,15 +2,16 @@ import json
 from pathlib import Path
 
 import pytest
+from oyarzabal.taxonomy import PITCH_GROUPS
 
 
-def test_static_replay_uses_schema_v3_and_preserves_pitch_order() -> None:
+def test_static_replay_uses_schema_v4_and_preserves_pitch_order() -> None:
     root = Path(__file__).parents[2] / "web/public/data"
     manifest = json.loads((root / "manifest.json").read_text())
     game = json.loads((root / "games/775300.json").read_text())
 
-    assert manifest["schemaVersion"] == 3
-    assert len(manifest["pitchGroups"]) == 6
+    assert manifest["schemaVersion"] == 4
+    assert tuple(manifest["pitchGroups"]) == tuple(str(group) for group in PITCH_GROUPS)
     assert game["pitchCount"] == 307
     assert [pitch["sequence"] for pitch in game["pitches"]] == list(range(1, 308))
     for pitch in game["pitches"]:

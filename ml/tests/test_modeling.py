@@ -12,10 +12,14 @@ from oyarzabal.modeling import (
 
 def test_sqrt_class_weights_have_unit_sample_mean_and_are_bounded() -> None:
     labels = np.array([0, 0, 0, 0, 1, 2, 3, 4, 5])
+    light = class_sample_weights(labels, "light")
     weights = class_sample_weights(labels, "sqrt")
+    assert light.mean() == pytest.approx(1)
     assert weights.mean() == pytest.approx(1)
     assert weights.min() >= 0.5
     assert weights.max() <= 3
+    assert light[-1] < weights[-1]
+    assert light[0] > weights[0]
     assert weights[-1] > weights[0]
 
 
@@ -72,9 +76,9 @@ def test_candidate_selection_enforces_balance_gates_and_tie_breaks() -> None:
 
 def test_candidate_matrix_and_time_folds_are_fixed() -> None:
     specs = candidate_specs()
-    assert len(specs) == 16
+    assert len(specs) == 24
     assert {spec.feature_set for spec in specs} == {"legacy", "enriched"}
-    assert {spec.weight_mode for spec in specs} == {"none", "sqrt"}
+    assert {spec.weight_mode for spec in specs} == {"none", "light", "sqrt"}
 
     rows = pd.DataFrame(
         {

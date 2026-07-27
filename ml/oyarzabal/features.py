@@ -7,12 +7,14 @@ from collections.abc import Iterable
 import numpy as np
 import pandas as pd
 
-from .taxonomy import PITCH_GROUPS, context_pitch, group_pitch
+from .taxonomy import PITCH_GROUPS, PitchGroup, context_pitch, group_pitch
 
 REPERTOIRE_PREFIXES = (
     "career_rate_",
     "season_rate_",
     "recent_100_rate_",
+    "game_rate_",
+    "game_delta_",
     "count_rate_",
     "stand_rate_",
     "transition_rate_",
@@ -20,6 +22,7 @@ REPERTOIRE_PREFIXES = (
 REPERTOIRE_FEATURES = tuple(
     f"{prefix}{group}" for prefix in REPERTOIRE_PREFIXES for group in PITCH_GROUPS
 )
+PA_COUNT_FEATURES = tuple(f"pa_count_{group}" for group in PITCH_GROUPS)
 
 LEGACY_NUMERIC_FEATURES = (
     "balls",
@@ -42,6 +45,13 @@ NUMERIC_FEATURES = (
     *LEGACY_NUMERIC_FEATURES,
     "pitch_number",
     "prev_pitch_streak",
+    "pa_prev_pitch_streak",
+    "pa_distinct_pitch_groups",
+    "pa_fastball_share",
+    "pa_breaking_share",
+    "pa_offspeed_share",
+    "game_distinct_pitch_groups",
+    *PA_COUNT_FEATURES,
     *REPERTOIRE_FEATURES,
 )
 
@@ -60,6 +70,7 @@ CATEGORICAL_FEATURES = (
     "pa_prev_pitch_1",
     "pa_prev_pitch_2",
     "pa_prev_pitch_3",
+    "pa_first_pitch_group",
 )
 
 GLOBAL_CATEGORICAL_FEATURES = tuple(
@@ -143,7 +154,7 @@ def _add_repertoire_features(rows: pd.DataFrame) -> None:
     season_total, season_counts = _past_group_counts(
         rows, ["pitcher", "_season"], indicators, supported
     )
-    _smoothed_rates(
+    season_rates = _smoothed_rates(
         rows,
         "season_rate_",
         season_total,
@@ -151,6 +162,25 @@ def _add_repertoire_features(rows: pd.DataFrame) -> None:
         career_rates,
         30,
     )
+
+    game_total, game_counts = _past_group_counts(
+        rows, ["game_pk", "pitcher"], indicators, supported
+    )
+    game_rates = _smoothed_rates(
+        rows,
+        "game_rate_",
+        game_total,
+        game_counts,
+        season_rates,
+        20,
+    )
+    rows["game_distinct_pitch_groups"] = sum(
+        count.gt(0).astype("int8") for count in game_counts.values()
+    )
+    for group in PITCH_GROUPS:
+        rows[f"game_delta_{group}"] = (
+            game_rates[group] - season_rates[group]
+        ).astype("float32")
 
     recent_counts = {}
     for group, indicator in indicators.items():
@@ -186,6 +216,60 @@ def _add_repertoire_features(rows: pd.DataFrame) -> None:
             career_rates,
             strength,
         )
+
+
+def _add_plate_appearance_features(rows: pd.DataFrame) -> None:
+    keys = ["game_pk", "at_bat_number"]
+    supported = rows["target_group"].notna().astype("float64")
+    indicators = {
+        group: rows["target_group"].eq(group).astype("float64")
+        for group in PITCH_GROUPS
+    }
+    _, counts = _past_group_counts(rows, keys, indicators, supported)
+    for group, count in counts.items():
+        rows[f"pa_count_{group}"] = count.astype("float32")
+
+    rows["pa_distinct_pitch_groups"] = sum(
+        count.gt(0).astype("int8") for count in counts.values()
+    )
+    previous_count = sum(counts.values())
+    fastball_count = sum(
+        counts[group]
+        for group in (PitchGroup.FOUR_SEAM, PitchGroup.MOVING_FASTBALL)
+    )
+    breaking_count = sum(
+        counts[group]
+        for group in (PitchGroup.SLIDER, PitchGroup.CURVE)
+    )
+    offspeed_count = counts[PitchGroup.CHANGEUP] + counts[PitchGroup.SPLITTER_FORK]
+    denominator = previous_count + 3
+    rows["pa_fastball_share"] = ((fastball_count + 1) / denominator).astype(
+        "float32"
+    )
+    rows["pa_breaking_share"] = ((breaking_count + 1) / denominator).astype(
+        "float32"
+    )
+    rows["pa_offspeed_share"] = ((offspeed_count + 1) / denominator).astype(
+        "float32"
+    )
+
+    pa_position = rows.groupby(keys, sort=False).cumcount()
+    first_group = rows.groupby(keys, sort=False)["context_group"].transform("first")
+    rows["pa_first_pitch_group"] = first_group.where(pa_position > 0, "UNKNOWN")
+
+    previous_group = rows.groupby(keys, sort=False)["context_group"].shift(1)
+    changed = rows["context_group"].ne(previous_group)
+    rows["_pa_pitch_run"] = changed.groupby(
+        [rows[key] for key in keys], sort=False
+    ).cumsum()
+    current_streak = (
+        rows.groupby([*keys, "_pa_pitch_run"], sort=False).cumcount() + 1
+    )
+    rows["pa_prev_pitch_streak"] = (
+        current_streak.groupby([rows[key] for key in keys], sort=False)
+        .shift(1)
+        .fillna(0)
+    )
 
 
 def prepare_pitch_rows(frames: Iterable[pd.DataFrame]) -> pd.DataFrame:
@@ -235,6 +319,7 @@ def prepare_pitch_rows(frames: Iterable[pd.DataFrame]) -> pd.DataFrame:
         rows[f"pa_prev_pitch_{lag}"] = rows.groupby(plate_appearance, sort=False)[
             "context_group"
         ].shift(lag)
+    _add_plate_appearance_features(rows)
 
     changed = rows["context_group"].ne(rows["prev_pitch_group"])
     rows["_pitch_run"] = changed.groupby(game_pitcher, sort=False).cumsum()

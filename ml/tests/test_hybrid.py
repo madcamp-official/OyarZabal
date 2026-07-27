@@ -3,9 +3,14 @@ import pandas as pd
 import pytest
 from oyarzabal.hybrid import (
     RegistryEntry,
+    apply_logit_bias,
     blend_by_pitcher,
     blend_probabilities,
+    fit_logit_bias,
+    personalize_by_pitcher,
+    personalizer_passes,
     select_blend_weight,
+    select_personalizer_strength,
     serialize_registry_entry,
     specialist_eligibility,
 )
@@ -109,3 +114,85 @@ def test_registry_serialization_uses_public_schema_names() -> None:
     assert payload["globalWeight"] == 0.25
     assert payload["specialistWeight"] == 0.75
     assert "pitcher_id" not in payload
+
+
+def test_logit_bias_personalizer_shrinks_and_routes_by_pitcher() -> None:
+    calibration_probabilities = np.tile(
+        np.array([[0.6, 0.4, 0, 0, 0, 0]]), (6, 1)
+    )
+    calibration_actual = np.array([1, 1, 1, 1, 0, 0])
+    light_shrinkage = fit_logit_bias(
+        calibration_actual, calibration_probabilities, prior_strength=1
+    )
+    heavy_shrinkage = fit_logit_bias(
+        calibration_actual, calibration_probabilities, prior_strength=100
+    )
+    evaluation = np.array([[0.6, 0.4, 0, 0, 0, 0]])
+
+    adjusted = apply_logit_bias(evaluation, light_shrinkage)
+    conservative = apply_logit_bias(evaluation, heavy_shrinkage)
+
+    assert adjusted[0, 1] > evaluation[0, 1]
+    assert conservative[0, 1] < adjusted[0, 1]
+    assert adjusted.sum(axis=1) == pytest.approx([1])
+
+    registry = {
+        10: RegistryEntry(
+            pitcher_id=10,
+            enabled=True,
+            specialist_weight=0.5,
+            model="logit-bias",
+            logit_bias=tuple(light_shrinkage),
+            personalizer_strength=1,
+        )
+    }
+    routed, sources = personalize_by_pitcher(
+        np.array([10, 20]),
+        np.vstack([evaluation, evaluation]),
+        registry,
+    )
+    assert routed[0, 1] > evaluation[0, 1]
+    assert routed[1] == pytest.approx(evaluation[0])
+    assert sources == ["hybrid", "global"]
+
+
+def test_personalizer_strength_is_selected_on_separate_rows() -> None:
+    calibration_probabilities = np.tile(
+        np.array([[0.6, 0.4, 0, 0, 0, 0]]), (8, 1)
+    )
+    evaluation_probabilities = calibration_probabilities.copy()
+    actual = np.array([1, 1, 1, 1, 0, 1, 0, 1])
+    evaluation_probabilities[actual == 0, :2] = [0.9, 0.1]
+
+    selected = select_personalizer_strength(
+        actual,
+        calibration_probabilities,
+        actual,
+        evaluation_probabilities,
+        strengths=(1, 10),
+    )
+
+    assert selected["accepted"] is True
+    assert selected["personalizerStrength"] in {1.0, 10.0}
+    assert len(selected["logitBias"]) == 6
+
+
+def test_personalizer_final_gate_rejects_accuracy_and_f1_regression() -> None:
+    global_metrics = {
+        "accuracy": 0.448,
+        "macroF1": 0.238,
+        "logLoss": 1.184,
+        "zeroRecallClasses": ["MOVING_FASTBALL"],
+        "actualDistribution": {"MOVING_FASTBALL": 0.003},
+        "majorityPredictionGap": 0.23,
+    }
+    candidate_metrics = {
+        "accuracy": 0.433,
+        "macroF1": 0.237,
+        "logLoss": 1.170,
+        "zeroRecallClasses": ["MOVING_FASTBALL"],
+        "actualDistribution": {"MOVING_FASTBALL": 0.003},
+        "majorityPredictionGap": 0.08,
+    }
+
+    assert personalizer_passes(global_metrics, candidate_metrics) is False

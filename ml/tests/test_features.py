@@ -66,9 +66,16 @@ def test_point_in_time_rates_do_not_use_current_or_future_targets() -> None:
                 "career_rate_",
                 "season_rate_",
                 "recent_100_rate_",
+                "game_rate_",
+                "game_delta_",
                 "count_rate_",
                 "stand_rate_",
                 "transition_rate_",
+                "pa_count_",
+                "pa_distinct_",
+                "pa_fastball_",
+                "pa_breaking_",
+                "pa_offspeed_",
             )
         )
     ]
@@ -84,6 +91,7 @@ def test_repertoire_probability_families_are_normalized() -> None:
         "career_rate_",
         "season_rate_",
         "recent_100_rate_",
+        "game_rate_",
         "count_rate_",
         "stand_rate_",
         "transition_rate_",
@@ -96,7 +104,7 @@ def test_unsupported_pitch_is_context_but_not_a_target() -> None:
     rows = _rows()
     unsupported = rows.iloc[[1]].copy()
     unsupported["pitch_number"] = 3
-    unsupported["pitch_type"] = "FS"
+    unsupported["pitch_type"] = "KN"
     final = rows.iloc[[1]].copy()
     final["pitch_number"] = 4
     final["pitch_type"] = "CH"
@@ -110,6 +118,52 @@ def test_unsupported_pitch_is_context_but_not_a_target() -> None:
     assert last["pa_prev_pitch_2"] == str(PitchGroup.SLIDER)
     assert last["pa_prev_pitch_3"] == str(PitchGroup.FOUR_SEAM)
     assert last["prev_pitch_streak"] == 1
+
+
+def test_plate_appearance_and_game_context_use_only_prior_pitches() -> None:
+    source = pd.DataFrame(
+        {
+            "game_date": ["2024-01-01"] * 5 + ["2024-02-01"],
+            "game_pk": [1] * 5 + [2],
+            "at_bat_number": [1, 1, 1, 1, 2, 1],
+            "pitch_number": [1, 2, 3, 4, 1, 1],
+            "pitcher": [10] * 6,
+            "batter": [20] * 4 + [30, 40],
+            "pitch_type": ["FF", "SL", "FF", "CH", "FF", "CU"],
+            "balls": [0] * 6,
+            "strikes": [0] * 6,
+            "stand": ["R"] * 6,
+        }
+    )
+
+    prepared = prepare_pitch_rows([source])
+    fourth = prepared.iloc[3]
+    next_batter = prepared.iloc[4]
+    next_game = prepared.iloc[5]
+
+    assert fourth["pa_count_FOUR_SEAM"] == 2
+    assert fourth["pa_count_SLIDER"] == 1
+    assert fourth["pa_distinct_pitch_groups"] == 2
+    assert fourth["pa_first_pitch_group"] == str(PitchGroup.FOUR_SEAM)
+    assert fourth["pa_prev_pitch_streak"] == 1
+    assert sum(
+        fourth[name]
+        for name in (
+            "pa_fastball_share",
+            "pa_breaking_share",
+            "pa_offspeed_share",
+        )
+    ) == pytest.approx(1)
+
+    assert next_batter["pa_count_FOUR_SEAM"] == 0
+    assert next_batter["pa_distinct_pitch_groups"] == 0
+    assert next_batter["pa_first_pitch_group"] == "UNKNOWN"
+    assert next_batter["pa_prev_pitch_streak"] == 0
+    assert next_batter["game_distinct_pitch_groups"] == 3
+
+    assert next_game["game_distinct_pitch_groups"] == 0
+    game_rate_columns = [f"game_rate_{group}" for group in PITCH_GROUPS]
+    assert prepared[game_rate_columns].sum(axis=1).tolist() == pytest.approx([1] * 6)
 
 
 def test_global_model_features_do_not_expose_player_identity() -> None:

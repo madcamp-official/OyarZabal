@@ -9,30 +9,29 @@ from enum import StrEnum
 
 class PitchGroup(StrEnum):
     FOUR_SEAM = "FOUR_SEAM"
-    SINKER = "SINKER"
-    CUTTER = "CUTTER"
+    MOVING_FASTBALL = "MOVING_FASTBALL"
     SLIDER = "SLIDER"
     CURVE = "CURVE"
     CHANGEUP = "CHANGEUP"
+    SPLITTER_FORK = "SPLITTER_FORK"
 
 
 PITCH_GROUPS = tuple(PitchGroup)
 
 PITCH_GROUP_NAMES: dict[PitchGroup, str] = {
     PitchGroup.FOUR_SEAM: "포심",
-    PitchGroup.SINKER: "싱커/투심",
-    PitchGroup.CUTTER: "커터",
-    PitchGroup.SLIDER: "슬라이더/스위퍼",
-    PitchGroup.CURVE: "커브",
+    PitchGroup.MOVING_FASTBALL: "무빙 패스트볼",
+    PitchGroup.SLIDER: "슬라이더 계열",
+    PitchGroup.CURVE: "커브 계열",
     PitchGroup.CHANGEUP: "체인지업",
+    PitchGroup.SPLITTER_FORK: "스플리터·포크",
 }
 
 _CODE_TO_GROUP: dict[str, PitchGroup] = {
     "FF": PitchGroup.FOUR_SEAM,
-    "FA": PitchGroup.FOUR_SEAM,
-    "SI": PitchGroup.SINKER,
-    "FT": PitchGroup.SINKER,
-    "FC": PitchGroup.CUTTER,
+    "SI": PitchGroup.MOVING_FASTBALL,
+    "FT": PitchGroup.MOVING_FASTBALL,
+    "FC": PitchGroup.MOVING_FASTBALL,
     "SL": PitchGroup.SLIDER,
     "ST": PitchGroup.SLIDER,
     "SV": PitchGroup.SLIDER,
@@ -40,10 +39,12 @@ _CODE_TO_GROUP: dict[str, PitchGroup] = {
     "KC": PitchGroup.CURVE,
     "CS": PitchGroup.CURVE,
     "CH": PitchGroup.CHANGEUP,
+    "FS": PitchGroup.SPLITTER_FORK,
+    "FO": PitchGroup.SPLITTER_FORK,
 }
 
-EXCLUDED_PITCH_CODES = frozenset({"AB", "IN", "PO", "UN"})
-UNSUPPORTED_PITCH_CODES = frozenset({"FS", "FO", "SC", "KN", "EP"})
+EXCLUDED_PITCH_CODES = frozenset({"AB", "IN", "PO"})
+UNSUPPORTED_PITCH_CODES = frozenset({"FA", "KN", "SC", "EP", "UN"})
 UNSUPPORTED_CONTEXT = "UNSUPPORTED"
 
 
@@ -71,7 +72,7 @@ def context_pitch(raw_code: object) -> PitchGroup | str | None:
 def normalize_group_probabilities(
     raw_probabilities: Mapping[str, float],
 ) -> dict[PitchGroup, float]:
-    """Merge raw Statcast probabilities and normalize them to seven groups."""
+    """Merge raw Statcast probabilities and normalize them to six groups."""
     grouped = {group: 0.0 for group in PITCH_GROUPS}
     for code, raw_value in raw_probabilities.items():
         group = group_pitch(code)

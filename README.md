@@ -8,7 +8,7 @@
 - 투수·카운트별 과거 구종 분포
 - PitchPredict Similarity
 - 2022–2025 MLB 전체 Global XGBoost
-- 검증을 통과한 유명 투수의 Specialist XGBoost와 Global의 가중 혼합
+- 검증을 통과한 유명 투수의 shrinkage personalizer와 Global 결합
 
 실제 구종은 사용자가 `실제 투구 공개`를 누르기 전까지 숨겨지며, 경기 종료 후
 Accuracy, Top-3 Accuracy, Macro F1, Log Loss를 비교합니다.
