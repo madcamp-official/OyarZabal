@@ -47,6 +47,9 @@ uv run pytest -q
 `artifacts/runs/<run-id>`에 저장합니다.
 2026 홀드아웃 평가는 2025년 말까지 학습한 모델만 허용하며, 학습 폴더나
 registry에서 2026 데이터가 감지되면 중단합니다.
+버전 간 개인화 비교는 V5 활성 선수 30명을 동결한
+`v5-enabled-pitchers-v1` cohort를 자동으로 사용합니다. 같은 benchmark의
+정확한 투구가 달라지면 row fingerprint 검사에서 평가가 중단됩니다.
 
 ## Codex Worktree
 

@@ -30,6 +30,49 @@ from .residual import (
 from .taxonomy import PITCH_GROUPS
 
 DEFAULT_CUTOFF = pd.Timestamp("2025-12-31")
+COMPARISON_COHORT_ID = "v5-enabled-pitchers-v1"
+FROZEN_BENCHMARK = {
+    "start": "2026-03-25",
+    "end": "2026-07-25",
+    "rows": 28_734,
+    "sampleSha256": "a2d7de0347b98e9cac05fe1ee22eedc1eab33aa5430e770089755f8945198232",
+}
+# Frozen from models/hybrid/registry.json. Model registries may change; this benchmark
+# cohort must not, otherwise cross-version personalizer comparisons become invalid.
+V5_EVALUATION_PITCHER_IDS = frozenset(
+    {
+        458681,
+        543037,
+        543135,
+        548389,
+        554430,
+        592836,
+        592866,
+        601713,
+        605135,
+        607259,
+        607536,
+        607625,
+        608344,
+        622491,
+        622663,
+        641154,
+        641540,
+        642547,
+        650644,
+        656288,
+        656427,
+        663559,
+        663623,
+        665152,
+        669194,
+        669373,
+        669923,
+        676440,
+        676710,
+        686613,
+    }
+)
 
 
 def _frames(directory: Path) -> list[pd.DataFrame]:
@@ -112,6 +155,24 @@ def _hash(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def evaluation_sample_fingerprint(rows: pd.DataFrame) -> str:
+    """Identify the exact labeled rows used by a benchmark."""
+    columns = [
+        "game_date",
+        "game_pk",
+        "at_bat_number",
+        "pitch_number",
+        "pitcher_id",
+        "batter_id",
+        "target",
+    ]
+    canonical = rows[columns].copy()
+    canonical["game_date"] = canonical["game_date"].dt.strftime("%Y-%m-%d")
+    canonical = canonical.sort_values(columns, kind="stable")
+    payload = canonical.to_csv(index=False, lineterminator="\n").encode()
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _predict_models(
@@ -286,6 +347,14 @@ def evaluate_frozen_holdout(
     final_probabilities = predicted["final"]
     sources = predicted["sources"]
     routing = predicted["routing"]
+    reference_predictions = (
+        _predict_models(rows, reference_model_directory)
+        if reference_model_directory is not None
+        else None
+    )
+    reference_probabilities = (
+        reference_predictions["final"] if reference_predictions else None
+    )
 
     pool_ids = set(registry)
     enabled_ids = {
@@ -293,13 +362,36 @@ def evaluate_frozen_holdout(
     }
     masks = {
         "allMlb": np.ones(len(rows), dtype=bool),
+        "comparisonCohort": rows["pitcher_id"]
+        .isin(V5_EVALUATION_PITCHER_IDS)
+        .to_numpy(),
         "registryPool": rows["pitcher_id"].isin(pool_ids).to_numpy(),
         "enabledPitchers": rows["pitcher_id"].isin(enabled_ids).to_numpy(),
+    }
+    comparison_rows = rows.loc[masks["comparisonCohort"]]
+    comparison_fingerprint = evaluation_sample_fingerprint(comparison_rows)
+    benchmark_start = rows["game_date"].min().date().isoformat()
+    benchmark_end = rows["game_date"].max().date().isoformat()
+    is_frozen_benchmark = (
+        benchmark_start == FROZEN_BENCHMARK["start"]
+        and benchmark_end == FROZEN_BENCHMARK["end"]
+    )
+    if is_frozen_benchmark and (
+        len(comparison_rows) != FROZEN_BENCHMARK["rows"]
+        or comparison_fingerprint != FROZEN_BENCHMARK["sampleSha256"]
+    ):
+        raise ValueError("frozen V5 evaluation sample changed")
+    scope_roles = {
+        "allMlb": "overall-comparison",
+        "comparisonCohort": "personalizer-comparison",
+        "registryPool": "model-diagnostic",
+        "enabledPitchers": "model-diagnostic",
     }
     scopes = {}
     for name, mask in masks.items():
         selected = rows.loc[mask]
-        scopes[name] = {
+        scope = {
+            "role": scope_roles[name],
             "global": _metrics(selected, global_probabilities[mask]),
             "final": _metrics(selected, final_probabilities[mask]),
             "pairedBootstrap": _paired(
@@ -308,6 +400,17 @@ def evaluate_frozen_holdout(
                 final_probabilities[mask],
             ),
         }
+        if reference_probabilities is not None:
+            scope["reference"] = _metrics(
+                selected,
+                reference_probabilities[mask],
+            )
+            scope["candidateVsReference"] = _paired(
+                selected,
+                reference_probabilities[mask],
+                final_probabilities[mask],
+            )
+        scopes[name] = scope
     pitchers, months = _breakdowns(
         rows,
         global_probabilities,
@@ -329,9 +432,7 @@ def evaluate_frozen_holdout(
     )
     reference = None
     promotion = None
-    if reference_model_directory is not None:
-        reference_predictions = _predict_models(rows, reference_model_directory)
-        reference_probabilities = reference_predictions["final"]
+    if reference_predictions is not None and reference_probabilities is not None:
         promotion_probabilities = final_probabilities.copy()
         player_failures = []
         for pitcher_id, entry in registry.items():
@@ -365,6 +466,20 @@ def evaluate_frozen_holdout(
         )
         reference_metrics = _metrics(rows, reference_probabilities)
         candidate_metrics = _metrics(rows, promotion_probabilities)
+        comparison_mask = masks["comparisonCohort"]
+        comparison_reference = _metrics(
+            comparison_rows,
+            reference_probabilities[comparison_mask],
+        )
+        comparison_candidate = _metrics(
+            comparison_rows,
+            promotion_probabilities[comparison_mask],
+        )
+        comparison_paired = _paired(
+            comparison_rows,
+            reference_probabilities[comparison_mask],
+            promotion_probabilities[comparison_mask],
+        )
         days = (
             rows["game_date"].max().normalize()
             - rows["game_date"].min().normalize()
@@ -375,7 +490,7 @@ def evaluate_frozen_holdout(
         ).to_numpy()
         intervened = int(np.count_nonzero(intervention_mask))
         enough_data = days >= 30 and len(rows) >= 100_000 and intervened >= 15_000
-        metric_passed = (
+        overall_metric_passed = (
             paired["ciLower"] > 0
             and candidate_metrics["accuracy"]
             >= reference_metrics["accuracy"] - 0.005
@@ -386,6 +501,18 @@ def evaluate_frozen_holdout(
             and candidate_metrics["totalVariationDistance"] <= 0.20
             and candidate_metrics["maxClassCalibrationError"] <= 0.10
         )
+        comparison_metric_passed = (
+            comparison_paired["ciLower"] > 0
+            and comparison_candidate["accuracy"]
+            >= comparison_reference["accuracy"] - 0.005
+            and comparison_candidate["macroF1"]
+            >= comparison_reference["macroF1"] - 0.005
+            and not comparison_candidate["zeroRecallClasses"]
+            and comparison_candidate["maxClassShareError"] <= 0.20
+            and comparison_candidate["totalVariationDistance"] <= 0.20
+            and comparison_candidate["maxClassCalibrationError"] <= 0.10
+        )
+        metric_passed = overall_metric_passed and comparison_metric_passed
         reference = {
             "models": reference_predictions["models"],
             "metrics": reference_metrics,
@@ -397,16 +524,33 @@ def evaluate_frozen_holdout(
             "enoughData": enough_data,
             "pairedBootstrap": paired,
             "deactivatedPitchers": player_failures,
+            "overallMetricPassed": overall_metric_passed,
+            "comparisonCohort": {
+                "id": COMPARISON_COHORT_ID,
+                "reference": comparison_reference,
+                "candidate": comparison_candidate,
+                "pairedBootstrap": comparison_paired,
+                "metricPassed": comparison_metric_passed,
+            },
             "metricPassed": metric_passed,
             "promoted": bool(enough_data and metric_passed),
         }
 
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "generatedAt": datetime.now(UTC).isoformat(),
         "trainingCutoff": str(registry_payload["dataCutoff"]),
         "holdoutStart": rows["game_date"].min().date().isoformat(),
         "holdoutEnd": rows["game_date"].max().date().isoformat(),
+        "evaluationCohort": {
+            "id": COMPARISON_COHORT_ID,
+            "sourceModel": "V5",
+            "definition": "pitcher_id in frozen V5 enabled registry",
+            "pitcherIds": sorted(V5_EVALUATION_PITCHER_IDS),
+            "rows": int(len(comparison_rows)),
+            "sampleSha256": comparison_fingerprint,
+            "frozenBenchmarkMatch": is_frozen_benchmark,
+        },
         "models": predicted["models"],
         "reference": reference,
         "promotion": promotion,
