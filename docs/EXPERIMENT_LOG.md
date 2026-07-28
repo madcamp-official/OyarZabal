@@ -411,3 +411,30 @@ Git revision:
 - 사전 게이트에 따라 모든 후보를 기각하고 2025·Personalizer·2026
   추론을 조기 중단했다. V7.2 active를 유지하며 V8.3은 정상 실패
   실험으로 보존한다.
+
+## 2026-07-28 — V8.4 Distribution-Safe Sequence Residual
+
+- V8.3의 Global-conditioned 구조와 결측 마스크를 유지하고 train-fold
+  기반 soft target, mild group-balanced focal loss, class-conditional
+  residual shrinkage, validation-only 안전 calibration을 비교했다.
+- 2024 740,320구에서 네 objective × shrinkage 2종 × scale
+  `0.05/0.10/0.25/0.50`의 32개 후보를 고정 비교했다. 자유 hierarchical
+  calibration은 분포 안전 조건에서 제외됐고 최종 후보들은 temperature
+  calibration을 사용했다.
+- Log Loss만 가장 낮았던 `SOFT_025_FOCAL_1 / 0.50`은 단일 seed에서는
+  통과했지만 3-seed physical-drop stress에서 Macro F1 허용치를 넘었다.
+  2025를 보기 전에 2024 선택 규칙을 허용폭의 절반인 0.25%p robust
+  margin으로 강화했고 `FOCAL_1 / 0.25`를 동결했다.
+- 3-seed ensemble은 2024에서 Global 대비 Exact 48.94%→49.28%,
+  Family 58.58%→59.04%, Hierarchical 53.76%→54.16%, Macro F1
+  46.27%→46.10%, Log Loss 1.09368→1.08705, TVD 8.52%→7.44%였다.
+  paired-game Log Loss gain CI는 `[0.00645, 0.00685]`였다.
+- 단일 확인인 2025 750,581구에서는 Exact 48.60%→48.99%, Family
+  58.26%→58.75%, Hierarchical 53.43%→53.87%, Macro F1
+  46.60%→46.59%, Log Loss 1.11030→1.10229, TVD 9.92%→8.52%였다.
+  paired-game Log Loss gain CI는 `[0.00783, 0.00821]`였다.
+- 정상·physical-drop stress의 모든 안전 게이트가 2024·2025에서
+  통과했다. Class-conditional shrinkage는 최종 후보에서 전부 1.0으로
+  수렴해 독립 이득이 없었다.
+- V8.4는 연구 후보로 통과했다. replay 제품 연결은 이번 실험 범위가
+  아니므로 V7.2 active 상태를 유지한다.
