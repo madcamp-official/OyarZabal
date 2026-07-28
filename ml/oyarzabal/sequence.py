@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import pandas as pd
@@ -50,6 +50,11 @@ CURRENT_NUMERIC_COLUMNS = (
     "on_3b",
     "pitch_number",
     "n_thruorder_pitcher",
+)
+REPERTOIRE_COLUMNS = tuple(
+    f"{prefix}{group}"
+    for prefix in ("season_rate_", "recent_100_rate_")
+    for group in PITCH_GROUPS
 )
 SORT_COLUMNS = ("game_date", "game_pk", "at_bat_number", "pitch_number")
 
@@ -160,6 +165,7 @@ class SequenceExamples:
     source_dates: np.ndarray
     current_categorical: np.ndarray
     current_numeric: np.ndarray
+    repertoire_context: np.ndarray
     pitcher_ids: np.ndarray
     batter_ids: np.ndarray
     catcher_ids: np.ndarray
@@ -172,6 +178,30 @@ class SequenceExamples:
 
     def __len__(self) -> int:
         return len(self.target_groups)
+
+    def with_repertoire(self, prepared_rows: pd.DataFrame) -> SequenceExamples:
+        """Attach point-in-time repertoire columns already built by features.py."""
+        if len(prepared_rows) != len(self):
+            raise ValueError("repertoire rows and sequence examples differ")
+        if not np.array_equal(
+            prepared_rows["target"].to_numpy(),
+            self.target_groups,
+        ):
+            raise ValueError("repertoire targets and sequence examples differ")
+        season = prepared_rows[list(REPERTOIRE_COLUMNS[:6])].to_numpy(
+            dtype=np.float32
+        )
+        recent = prepared_rows[list(REPERTOIRE_COLUMNS[6:])].to_numpy(
+            dtype=np.float32
+        )
+        repertoire = np.column_stack([season, recent, recent - season])
+        return replace(
+            self,
+            current_numeric=np.column_stack(
+                [self.current_numeric, repertoire]
+            ).astype(np.float32),
+            repertoire_context=repertoire.astype(np.float32),
+        )
 
     def batch(
         self,
@@ -435,6 +465,7 @@ class SequenceExampleBuilder:
             source_dates=dates,
             current_categorical=current_categorical,
             current_numeric=current_numeric,
+            repertoire_context=np.empty((target_count, 0), dtype=np.float32),
             pitcher_ids=pitcher_ids,
             batter_ids=batter_ids,
             catcher_ids=catcher_ids,
@@ -464,6 +495,7 @@ if nn is not None:
             description_vocab_size: int,
             *,
             length: int = SEQUENCE_LENGTH,
+            current_numeric_width: int = len(CURRENT_NUMERIC_COLUMNS),
             d_model: int = 64,
             layers: int = 2,
             heads: int = 4,
@@ -486,7 +518,7 @@ if nn is not None:
                 TOKEN_NUMERIC_COLUMNS
             )
             self.token_projection = nn.Linear(token_width, d_model)
-            current_width = 3 + 3 + 3 + len(CURRENT_NUMERIC_COLUMNS)
+            current_width = 3 + 3 + 3 + current_numeric_width
             self.current_projection = nn.Linear(current_width, d_model)
             self.position_embedding = nn.Embedding(length, d_model)
             layer = nn.TransformerEncoderLayer(
@@ -580,6 +612,8 @@ if nn is not None:
             batch: Mapping[str, torch.Tensor],
             *,
             location_weight: float = 0.25,
+            family_weights: torch.Tensor | None = None,
+            child_weights: torch.Tensor | None = None,
         ) -> torch.Tensor:
             family_target = batch["target_family"].long()
             group_target = batch["target_group"].long()
@@ -587,11 +621,20 @@ if nn is not None:
             family_loss = F.cross_entropy(
                 output["family_logits"],
                 family_target,
+                weight=family_weights,
             )
-            child_loss = F.cross_entropy(
+            child_losses = F.cross_entropy(
                 output["child_logits"][rows, family_target],
                 batch["target_child"].long(),
+                reduction="none",
             )
+            if child_weights is None:
+                child_loss = child_losses.mean()
+            else:
+                sample_weights = child_weights[group_target]
+                child_loss = (
+                    child_losses * sample_weights
+                ).sum() / sample_weights.sum()
             zone_target = batch["target_zone"].long()
             valid_zone = zone_target != -100
             zone_loss = (
@@ -645,6 +688,28 @@ class FittedSequenceExpert:
     location_weight: float
     validation_log_loss: float
     epochs: int
+    family_weights: np.ndarray | None = None
+    child_weights: np.ndarray | None = None
+
+
+def inverse_sqrt_weights(
+    labels: np.ndarray,
+    classes: int,
+) -> np.ndarray:
+    """Return mean-one clipped inverse-sqrt weights for a train fold only."""
+    counts = np.bincount(np.asarray(labels, dtype=int), minlength=classes)
+    if (counts == 0).any():
+        raise ValueError("class weights require every class in the train fold")
+    raw = np.sqrt(len(labels) / (classes * counts))
+    low, high = 0.0, 100.0
+    for _ in range(60):
+        scale = (low + high) / 2
+        if np.clip(raw * scale, 0.5, 3.0).mean() < 1:
+            low = scale
+        else:
+            high = scale
+    weights = np.clip(raw * ((low + high) / 2), 0.5, 3.0)
+    return weights.astype(np.float32)
 
 
 def predict_sequence(
@@ -689,6 +754,7 @@ def fit_sequence_expert(
     *,
     description_vocab_size: int,
     location_weight: float = 0.25,
+    balanced: bool = False,
     epochs: int = 6,
     batch_size: int = 2048,
     learning_rate: float = 1e-3,
@@ -705,9 +771,36 @@ def fit_sequence_expert(
         "cuda" if torch.cuda.is_available() else "cpu"
     )
     normalizer = SequenceNormalizer.fit(examples, train_indices)
+    family_weights = (
+        inverse_sqrt_weights(
+            examples.target_families[train_indices],
+            len(PITCH_FAMILIES),
+        )
+        if balanced
+        else None
+    )
+    child_weights = (
+        inverse_sqrt_weights(
+            examples.target_groups[train_indices],
+            len(PITCH_GROUPS),
+        )
+        if balanced
+        else None
+    )
+    family_weight_tensor = (
+        torch.as_tensor(family_weights, device=selected_device)
+        if family_weights is not None
+        else None
+    )
+    child_weight_tensor = (
+        torch.as_tensor(child_weights, device=selected_device)
+        if child_weights is not None
+        else None
+    )
     model = HierarchicalSequenceTransformer(
         description_vocab_size,
         length=examples.history_indices.shape[1],
+        current_numeric_width=examples.current_numeric.shape[1],
     ).to(selected_device)
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -737,6 +830,8 @@ def fit_sequence_expert(
                 model(batch),
                 batch,
                 location_weight=location_weight,
+                family_weights=family_weight_tensor,
+                child_weights=child_weight_tensor,
             )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
@@ -747,6 +842,8 @@ def fit_sequence_expert(
             location_weight,
             float("inf"),
             epoch,
+            family_weights,
+            child_weights,
         )
         probabilities = predict_sequence(
             temporary,
@@ -786,22 +883,29 @@ def fit_sequence_expert(
         location_weight,
         best_loss,
         best_epoch,
+        family_weights,
+        child_weights,
     )
 
 
 def blend_log_probabilities(
     global_probabilities: np.ndarray,
     sequence_probabilities: np.ndarray,
-    weight: float,
+    weight: float | np.ndarray,
 ) -> np.ndarray:
-    if not 0 <= weight <= 1:
+    weights = np.asarray(weight, dtype=float)
+    if np.any((weights < 0) | (weights > 1)):
         raise ValueError("sequence blend weight must be between zero and one")
     global_values = validate_probability_matrix(global_probabilities)
     sequence_values = validate_probability_matrix(sequence_probabilities)
     if global_values.shape != sequence_values.shape:
         raise ValueError("global and sequence probabilities are misaligned")
-    logits = (1 - weight) * np.log(np.clip(global_values, 1e-12, 1))
-    logits += weight * np.log(np.clip(sequence_values, 1e-12, 1))
+    if weights.ndim > 1 or (weights.ndim == 1 and len(weights) != len(global_values)):
+        raise ValueError("sequence blend weights are misaligned")
+    if weights.ndim == 1:
+        weights = weights[:, None]
+    logits = (1 - weights) * np.log(np.clip(global_values, 1e-12, 1))
+    logits += weights * np.log(np.clip(sequence_values, 1e-12, 1))
     logits -= logits.max(axis=1, keepdims=True)
     values = np.exp(logits)
     return validate_probability_matrix(values)

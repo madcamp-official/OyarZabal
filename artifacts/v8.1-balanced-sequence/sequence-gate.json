@@ -1,0 +1,28 @@
+{
+  "trainedOn": 2023,
+  "features": [
+    "global_entropy",
+    "sequence_entropy",
+    "global_margin",
+    "sequence_margin",
+    "top1_agreement",
+    "family_agreement",
+    "js_divergence",
+    "sequence_length",
+    "history_missing_rate",
+    "recent_diversity",
+    "recent_streak",
+    "balls",
+    "strikes",
+    "same_plate_appearance",
+    "top1_season_rate",
+    "top1_recent_rate",
+    "top1_repertoire_delta"
+  ],
+  "positiveRate": 0.54736928818847,
+  "device": "cuda",
+  "threshold": null,
+  "scaleLevels": [
+    0
+  ]
+}

@@ -355,3 +355,37 @@ Git revision:
   Log Loss +0.00389, TVD +8.00%p로 과보정됐다.
 - V7.5 전체 설정은 기각한다. 큰 scale의 가능성은 full tier에만 남기고,
   active V7.2는 유지한다.
+
+## 2026-07-28 — V8.1 Balanced Sequence Expert
+
+- 2023 OOF로 Sequence Gate를 학습하고, 2024에서 ablation·constant
+  blend·Gate threshold를 선택한 뒤 2025를 고정 후보로 한 번 확인했다.
+  다른 2025 ablation 지표는 효과 분해 보고 전용이며 선택에는 사용하지
+  않았다. 2025 확인 뒤 재튜닝하지 않았다.
+- ablation은 기존 V8(A), point-in-time 시즌·최근100 repertoire(B),
+  sqrt class weight(C), 둘의 결합(D)을 비교했다. location auxiliary
+  weight는 0, blend 후보는 0/0.10/0.15/0.20/0.25로 고정했다.
+- 2024에서 B와 constant blend 0.25가 선택됐다. 2025 Global 대비
+  Exact +0.98%p, Family +1.28%p, Hierarchical +1.13%p, Log Loss
+  −0.01409였고 Macro F1 하락은 −0.12%p로 안전 한도 안이었다.
+- 기존 V8 blend 0.25와 비교하면 2025 Macro F1은 +0.63%p,
+  Log Loss는 −0.00193 개선됐다. 기존 −0.75%p Macro F1 하락을
+  −0.12%p까지 회복했다.
+- sqrt weight는 Macro F1을 회복했지만 Log Loss 이득을 크게 줄였다.
+  결합 D도 B보다 Macro F1 +0.52%p였으나 Log Loss +0.01118로
+  악화돼 선택하지 않았다.
+- ID-free Sequence Gate의 2024 후보 네 개는 모두 안전 조건을
+  통과했지만 가장 좋은 threshold 0.4도 Log Loss 1.08387로 constant
+  1.08073보다 나빴다. 복잡도 채택 조건에 따라 Gate를 제외했다.
+- Sequence 통과 후 V7.2 Registry tier·scale을 동결하고 Residual과
+  Residual Gate를 Sequence-adjusted OOF base 위에서 재학습했다.
+  2024 Log Loss 1.08302→1.08232, 2025 1.09622→1.09559로 개선했고,
+  shadow·Registry 밖 fallback은 base와 bit-for-bit 동일했다.
+- 제품 active 모델은 V7.2로 유지한다. V8.1은 아직 보지 않은 미래
+  구간의 단일 독립 검증 전까지 candidate다.
+- 설정 hash:
+  `5a75e6a82a37b5406c0fef1c429d4172cb818d0a4cb0c1afe57144988eb1cf07`
+- row fingerprint:
+  2023 `460eae2c5cb37445db1dc125cadc014e4a1d430d99d5d4208cb76dc58c64dff5`,
+  2024 `b0800beadb56f183117e708ab5a2263c2f0d4dbfefe4fb6cb7a76fe0c46f8847`,
+  2025 `08a4d7ac9eb0085eb796fd5e48d35f382eccf6255bfa1c4135b8c95c361ade5b`.
