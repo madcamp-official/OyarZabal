@@ -1,7 +1,13 @@
 from datetime import date
 
 import pandas as pd
-from oyarzabal.data import collect_statcast_shards, month_windows
+import pytest
+from oyarzabal.data import (
+    V8_EXTRA_COLUMNS,
+    collect_statcast_shards,
+    month_windows,
+    probe_statcast_schema,
+)
 
 
 def test_month_windows_clip_to_requested_dates():
@@ -109,3 +115,13 @@ def test_collection_extends_an_existing_partial_month(tmp_path):
     assert calls == [("2026-07-26", "2026-07-28")]
     assert result["downloadedRows"] == 1
     assert list(merged["game_pk"]) == [1, 2]
+
+
+def test_v8_probe_requires_extended_physical_schema():
+    frame = pd.DataFrame({name: [1] for name in V8_EXTRA_COLUMNS})
+    result = probe_statcast_schema(frame, V8_EXTRA_COLUMNS)
+
+    assert result["rows"] == 1
+    assert result["missingRates"]["fielder_2"] == 0
+    with pytest.raises(ValueError, match="release_spin_rate"):
+        probe_statcast_schema(frame.drop(columns="release_spin_rate"), V8_EXTRA_COLUMNS)
