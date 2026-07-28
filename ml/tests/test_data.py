@@ -19,7 +19,7 @@ def test_collection_is_atomic_and_resumes_completed_months(tmp_path):
         calls.append((start, end))
         return pd.DataFrame(
             {
-                "game_date": [start],
+                "game_date": [end],
                 "game_pk": [1],
                 "pitch_type": ["FF"],
                 "pitcher": [10],
@@ -57,3 +57,55 @@ def test_collection_is_atomic_and_resumes_completed_months(tmp_path):
         "batter",
     ]
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_collection_extends_an_existing_partial_month(tmp_path):
+    columns = (
+        "game_date",
+        "game_pk",
+        "at_bat_number",
+        "pitch_number",
+        "pitch_type",
+        "pitcher",
+        "batter",
+    )
+    pd.DataFrame(
+        {
+            "game_date": ["2026-07-25"],
+            "game_pk": [1],
+            "at_bat_number": [1],
+            "pitch_number": [1],
+            "pitch_type": ["FF"],
+            "pitcher": [10],
+            "batter": [20],
+        }
+    ).to_parquet(tmp_path / "2026-07.parquet", index=False)
+    calls: list[tuple[str, str]] = []
+
+    def fetch(start: str, end: str) -> pd.DataFrame:
+        calls.append((start, end))
+        return pd.DataFrame(
+            {
+                "game_date": ["2026-07-26"],
+                "game_pk": [2],
+                "at_bat_number": [1],
+                "pitch_number": [1],
+                "pitch_type": ["SL"],
+                "pitcher": [30],
+                "batter": [40],
+            }
+        )
+
+    result = collect_statcast_shards(
+        date(2026, 7, 26),
+        date(2026, 7, 28),
+        tmp_path,
+        fetcher=fetch,
+        columns=columns,
+        resource_check=lambda: None,
+    )
+
+    merged = pd.read_parquet(tmp_path / "2026-07.parquet")
+    assert calls == [("2026-07-26", "2026-07-28")]
+    assert result["downloadedRows"] == 1
+    assert list(merged["game_pk"]) == [1, 2]
