@@ -326,3 +326,16 @@ Git revision:
 - full tier는 Log Loss와 Macro F1·TVD가 함께 개선됐지만 limited tier는
   Log Loss 개선과 함께 TVD가 1.44%p 악화됐다. V7.3은 공개 표본 진단
   실험으로만 기록하고 V7.2의 active 상태는 바꾸지 않는다.
+
+## 2026-07-28 — V7.4 equal tier scale stress test
+
+- V7.3에서 full 배율만 3→4로 높였다. limited는 4, shadow는 0이며
+  reliability boost 1.5, Gate power 0.5, scale·JS·확률 변화 cap은 유지했다.
+- 공개 2026 전체에서 V7.4는 V7.3 대비 Exact +0.001%p, Family +0.001%p,
+  Hierarchical +0.001%p, Log Loss −0.000004로 아주 조금 개선됐다.
+- full 3명·3,841구에서는 Exact +0.10%p, Family +0.16%p, Macro F1
+  +0.14%p, Log Loss −0.00048, TVD −0.31%p로 모든 주요 방향이 개선됐다.
+- 전체 non-zero scale 평균은 0.332→0.335였고 개입 투구는 같은
+  42,518구였다. 고정 30명 cohort에는 full tier 투구가 없어 V7.3과 결과가
+  동일했다.
+- V7.4는 공개 표본 stress test로만 보존하고 V7.2의 active 상태는 유지한다.
