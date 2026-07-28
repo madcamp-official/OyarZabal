@@ -409,6 +409,18 @@
       }
     }
   },
+  "protocolAudit": {
+    "selectionYear": 2024,
+    "confirmationYear": 2025,
+    "confirmationInputs": [
+      "global",
+      "B_repertoire-blend-0.25",
+      "sequence-gate-not-selected"
+    ],
+    "other2025Ablations": "reporting-only-never-read-by-selection",
+    "retunedAfter2025": false,
+    "opened2026SelectionUse": false
+  },
   "gateArtifact": {
     "trainedOn": 2023,
     "features": [

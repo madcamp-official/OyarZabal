@@ -511,6 +511,8 @@ def _report(result: dict[str, object]) -> str:
             "Repertoire와 sqrt weight의 독립 효과는 같은 constant blend에서 "
             "비교했다. 2025는 2024 선택을 고정한 뒤 한 번만 확인했으며, "
             "2025 결과를 보고 후보·threshold·구조를 추가하지 않았다.",
+            "표의 다른 2025 ablation은 효과 분해 보고 전용이며 선택 코드가 "
+            "읽지 않는다.",
             "",
             "## Sequence-adjusted Personalizer",
             "",
@@ -976,8 +978,15 @@ def run(
             Path("models/v7.2/registry.json"),
             Path("models/v8.1-candidate"),
         )
-        if final != "blend0"
-        else {"status": "not-run-sequence-failed", "accepted": False}
+        if final == "constant"
+        else {
+            "status": (
+                "not-run-sequence-failed"
+                if final == "blend0"
+                else "not-run-gate-needs-nested-oof-base"
+            ),
+            "accepted": False,
+        }
     )
     config = {
         "ablations": ABLATIONS,
@@ -1006,6 +1015,22 @@ def run(
             "final": final,
             "classification": classification,
             "ablationDecision": selection,
+        },
+        "protocolAudit": {
+            "selectionYear": 2024,
+            "confirmationYear": 2025,
+            "confirmationInputs": [
+                "global",
+                f"{selected_name}-blend-{selected_blend}",
+                (
+                    f"sequence-gate-{selected_threshold}"
+                    if selected_threshold is not None
+                    else "sequence-gate-not-selected"
+                ),
+            ],
+            "other2025Ablations": "reporting-only-never-read-by-selection",
+            "retunedAfter2025": False,
+            "opened2026SelectionUse": False,
         },
         "gateArtifact": {
             "trainedOn": 2023,
@@ -1072,8 +1097,10 @@ def resume_personalizer(
     result = json.loads(result_path.read_text(encoding="utf-8"))
     selected_name = str(result["selection"]["ablation"])
     selected_blend = float(result["selection"]["constantBlend"])
-    if result["selection"]["final"] == "blend0":
-        raise ValueError("cannot retrain Personalizer after Sequence rejection")
+    if result["selection"]["final"] != "constant":
+        raise ValueError(
+            "Personalizer replay requires the selected constant Sequence base"
+        )
     raw = _load_raw(data_directory)
     raw["game_date"] = pd.to_datetime(raw["game_date"], errors="coerce")
     rows = prepare_pitch_rows([raw])

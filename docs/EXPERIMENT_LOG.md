@@ -360,6 +360,8 @@ Git revision:
 
 - 2023 OOF로 Sequence Gate를 학습하고, 2024에서 ablation·constant
   blend·Gate threshold를 선택한 뒤 2025를 고정 후보로 한 번 확인했다.
+  다른 2025 ablation 지표는 효과 분해 보고 전용이며 선택에는 사용하지
+  않았다. 2025 확인 뒤 재튜닝하지 않았다.
 - ablation은 기존 V8(A), point-in-time 시즌·최근100 repertoire(B),
   sqrt class weight(C), 둘의 결합(D)을 비교했다. location auxiliary
   weight는 0, blend 후보는 0/0.10/0.15/0.20/0.25로 고정했다.
