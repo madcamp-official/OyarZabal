@@ -35,6 +35,7 @@ from .modeling import (
     train_final_candidate,
 )
 from .residual import (
+    SAFE_SCALE_MULTIPLIERS,
     apply_correction,
     compute_pitcher_reliability,
     gate_targets,
@@ -809,6 +810,54 @@ def _safe_scale_analysis(
     }
 
 
+def _joint_safe_scale_multiplier(
+    actual_by_year: Mapping[int, np.ndarray],
+    global_by_year: Mapping[int, np.ndarray],
+    correction_by_year: Mapping[int, np.ndarray],
+    routing_by_year: Mapping[int, list[dict[str, object]]],
+    positions_by_year: Mapping[int, np.ndarray],
+) -> float:
+    years = (2024, 2025)
+    if (
+        len(positions_by_year[2024]) < MIN_2024_EVALUATION_PITCHES
+        or len(positions_by_year[2025]) < MIN_2025_EVALUATION_PITCHES
+    ):
+        return 0.0
+    global_metrics = {
+        year: _metrics(
+            actual_by_year[year][positions_by_year[year]],
+            global_by_year[year][positions_by_year[year]],
+        )
+        for year in years
+    }
+    base_scales = {
+        year: np.asarray(
+            [
+                float(routing_by_year[year][position]["effectiveScale"])
+                for position in positions_by_year[year]
+            ]
+        )
+        for year in years
+    }
+    for multiplier in sorted(SAFE_SCALE_MULTIPLIERS, reverse=True):
+        if all(
+            not relative_pitcher_failure_reasons(
+                global_metrics[year],
+                _metrics(
+                    actual_by_year[year][positions_by_year[year]],
+                    apply_correction(
+                        global_by_year[year][positions_by_year[year]],
+                        correction_by_year[year][positions_by_year[year]],
+                        base_scales[year] * multiplier,
+                    ),
+                ),
+            )
+            for year in years
+        ):
+            return float(multiplier)
+    return 0.0
+
+
 def train_hybrid(
     rows: pd.DataFrame,
     model_directory: Path,
@@ -1161,10 +1210,26 @@ def train_hybrid(
             min_support=MIN_2025_EVALUATION_PITCHES,
         )
         safe_multiplier_2024 = float(safe_2024["maxSafeMultiplier"])
-        safe_multiplier_2025 = float(safe_2025["maxSafeMultiplier"])
-        conservative_multiplier = min(
-            safe_multiplier_2024,
-            safe_multiplier_2025,
+        joint_safe_multiplier = _joint_safe_scale_multiplier(
+            {
+                2024: evaluation_rows_2024["target"].to_numpy(),
+                2025: pooled_rows[2025]["target"].to_numpy(),
+            },
+            {
+                2024: evaluation_global_2024,
+                2025: pooled_global[2025],
+            },
+            {
+                2024: correction_2024[evaluation_mask],
+                2025: correction_2025,
+            },
+            {2024: routing_2024, 2025: routing_2025},
+            {2024: positions_2024, 2025: positions_2025},
+        )
+        conservative_multiplier = (
+            joint_safe_multiplier
+            if len(positions_2025)
+            else safe_multiplier_2024
         )
         if aggregate_passed and validation_passed and test_passed:
             recommended_tier = "full"
@@ -1205,6 +1270,7 @@ def train_hybrid(
                 "2024": safe_2024,
                 "2025": safe_2025,
                 "conservativeMultiplier": conservative_multiplier,
+                "jointSafeMultiplier": joint_safe_multiplier,
                 "recommendedTier": recommended_tier,
                 "registryMultiplier": registry_multiplier,
                 "stale": pitcher_id in stale_ids,
