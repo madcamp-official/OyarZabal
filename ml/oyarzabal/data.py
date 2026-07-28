@@ -48,6 +48,37 @@ STATCAST_COLUMNS = (
     "n_thruorder_pitcher",
     "pitcher_days_since_prev_game",
 )
+V8_EXTRA_COLUMNS = (
+    "release_spin_rate",
+    "pfx_x",
+    "pfx_z",
+    "release_pos_x",
+    "release_pos_z",
+    "release_extension",
+    "sz_top",
+    "sz_bot",
+    "fielder_2",
+)
+V8_STATCAST_COLUMNS = (*STATCAST_COLUMNS, *V8_EXTRA_COLUMNS)
+
+
+def probe_statcast_schema(
+    frame: pd.DataFrame,
+    columns: Sequence[str] = V8_STATCAST_COLUMNS,
+) -> dict[str, object]:
+    """Fail before collection if live Statcast lacks the frozen V8 schema."""
+    missing = sorted(set(columns) - set(frame.columns))
+    if missing:
+        raise ValueError(f"Statcast probe is missing columns: {missing}")
+    return {
+        "rows": len(frame),
+        "columns": len(frame.columns),
+        "requiredColumns": list(columns),
+        "missingRates": {
+            name: float(frame[name].isna().mean()) if len(frame) else None
+            for name in V8_EXTRA_COLUMNS
+        },
+    }
 
 
 def month_windows(start: date, end: date) -> list[tuple[date, date]]:
@@ -165,8 +196,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--start", type=date.fromisoformat, default=date(2022, 1, 1))
     parser.add_argument("--end", type=date.fromisoformat, default=date(2025, 12, 31))
+    parser.add_argument("--output", type=Path)
     parser.add_argument(
-        "--output", type=Path, default=Path("data/raw/statcast")
+        "--v8",
+        action="store_true",
+        help="collect the isolated V8 physical/catcher schema",
     )
     parser.add_argument(
         "--serial",
@@ -174,6 +208,10 @@ def main() -> None:
         help="disable pybaseball's within-month parallel requests",
     )
     args = parser.parse_args()
+    output = args.output or Path(
+        "data/raw/statcast-v8" if args.v8 else "data/raw/statcast"
+    )
+    columns = V8_STATCAST_COLUMNS if args.v8 else STATCAST_COLUMNS
 
     from pybaseball import statcast
 
@@ -195,15 +233,30 @@ def main() -> None:
             signal.signal(signal.SIGALRM, previous)
 
     try:
+        probe_date = min(
+            args.end,
+            max(args.start, date(args.start.year, 4, 15)),
+        )
+        probe = (
+            probe_statcast_schema(
+                fetch(probe_date.isoformat(), probe_date.isoformat())
+            )
+            if args.v8
+            else None
+        )
         result = collect_statcast_shards(
             args.start,
             args.end,
-            args.output,
+            output,
             fetcher=fetch,
+            columns=columns,
         )
+        if probe is not None:
+            result["schema"] = "v8"
+            result["probe"] = probe
     except Exception as error:
-        args.output.mkdir(parents=True, exist_ok=True)
-        (args.output / "error.json").write_text(
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "error.json").write_text(
             json.dumps(
                 {
                     "type": type(error).__name__,

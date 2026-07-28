@@ -19,6 +19,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+sequence = [
+  "torch>=2.5,<3",
+]
 dev = [
   "pytest>=8.3,<9",
   "ruff>=0.9,<1",
@@ -27,6 +30,7 @@ dev = [
 [project.scripts]
 oyarzabal-build-demo = "oyarzabal.pipeline:main"
 oyarzabal-fetch-statcast = "oyarzabal.data:main"
+oyarzabal-train-v8 = "oyarzabal.v8:main"
 oyarzabal-resource-snapshot = "oyarzabal.resources:main"
 oyarzabal-train-hybrid = "oyarzabal.training:main"
 oyarzabal-evaluate-holdout = "oyarzabal.holdout:main"
