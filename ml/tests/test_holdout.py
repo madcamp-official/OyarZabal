@@ -2,12 +2,14 @@ import hashlib
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 from oyarzabal.holdout import (
     COMPARISON_COHORT_ID,
     V5_EVALUATION_PITCHER_IDS,
     _registry,
+    _scale_summary,
     evaluate_frozen_holdout,
     evaluation_sample_fingerprint,
     frozen_rows,
@@ -182,8 +184,7 @@ def test_v7_prospective_manifest_freezes_candidates_and_policy() -> None:
         (candidate["id"], candidate["limitedScaleBoost"])
         for candidate in manifest["candidates"]
     ] == [
-        ("v7.1-limited-1.5", 1.5),
-        ("v7.0-limited-1.0", 1.0),
+        ("v7.2-reliability-1.5-gate-0.5", 1.0),
     ]
     assert (
         manifest["metricPolicy"]["maximumDistributionRegression"]
@@ -307,3 +308,11 @@ def test_prospective_evaluation_does_not_open_metrics_before_start(
     assert validation["firstLookConsumed"] is False
     assert validation["selectedCandidateId"] is None
     assert "metrics" not in validation["candidates"]["v7.0"]
+
+
+def test_scale_summary_reports_applied_distribution() -> None:
+    summary = _scale_summary(np.array([0, 0.1, 0.2, 0.3]))
+
+    assert summary["nonZero"] == 3
+    assert summary["nonZeroMean"] == pytest.approx(0.2)
+    assert summary["nonZeroP50"] == pytest.approx(0.2)

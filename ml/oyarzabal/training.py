@@ -9,8 +9,9 @@ import pickle
 import traceback
 from collections import Counter
 from collections.abc import Mapping
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
+from itertools import product
 from pathlib import Path
 
 import numpy as np
@@ -26,7 +27,7 @@ from .hybrid import (
     serialize_registry_entry,
     specialist_eligibility,
 )
-from .metrics import evaluate_diagnostics
+from .metrics import evaluate_diagnostics, hierarchical_top_indices
 from .modeling import (
     CandidateSpec,
     predict_candidate,
@@ -34,6 +35,7 @@ from .modeling import (
     train_final_candidate,
 )
 from .residual import (
+    SAFE_SCALE_MULTIPLIERS,
     apply_correction,
     compute_pitcher_reliability,
     gate_targets,
@@ -41,6 +43,7 @@ from .residual import (
     pitcher_residual_passes,
     predict_context_gate,
     predict_correction,
+    relative_pitcher_failure_reasons,
     residual_passes,
     train_final_residual,
     train_gate,
@@ -66,6 +69,27 @@ GLOBAL_TEMPERATURE = 1.0465
 CALIBRATION_WEIGHTS = (0.0, 0.25, 0.5, 0.75)
 MIN_2024_EVALUATION_PITCHES = 100
 MIN_2025_EVALUATION_PITCHES = 300
+
+
+def load_residual_tuning_manifest(path: Path) -> dict[str, object]:
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        manifest.get("schemaVersion") != 1
+        or manifest.get("selectionYear") != 2024
+        or manifest.get("confirmationYear") != 2025
+        or pd.Timestamp(str(manifest["dataEnd"]))
+        >= pd.Timestamp(str(manifest["forbiddenProspectiveStart"]))
+    ):
+        raise ValueError("invalid residual tuning manifest")
+    for name in (
+        "reliabilityScaleBoosts",
+        "contextGatePowers",
+        "limitedScaleBoosts",
+    ):
+        values = [float(value) for value in manifest.get(name, [])]
+        if not values or any(value <= 0 for value in values):
+            raise ValueError(f"invalid {name}")
+    return manifest
 
 
 def global_specs() -> tuple[CandidateSpec, ...]:
@@ -355,6 +379,388 @@ def _routing_summary(values: list[dict[str, object]]) -> dict[str, object]:
     }
 
 
+def _tuning_failure_reasons(
+    global_metrics: Mapping[str, object],
+    candidate_metrics: Mapping[str, object],
+    policy: Mapping[str, float],
+) -> list[str]:
+    reasons = []
+    if candidate_metrics["logLoss"] >= global_metrics["logLoss"]:
+        reasons.append("log_loss_not_improved")
+    for metric, limit, reason in (
+        ("accuracy", "maximumAccuracyDrop", "accuracy_drop"),
+        ("familyAccuracy", "maximumFamilyAccuracyDrop", "family_accuracy_drop"),
+        (
+            "hierarchicalAccuracy",
+            "maximumHierarchicalAccuracyDrop",
+            "hierarchical_accuracy_drop",
+        ),
+        ("macroF1", "maximumMacroF1Drop", "macro_f1_drop"),
+    ):
+        if candidate_metrics[metric] < global_metrics[metric] - policy[limit]:
+            reasons.append(reason)
+    major_zero = [
+        name
+        for name in candidate_metrics["zeroRecallClasses"]
+        if candidate_metrics["actualDistribution"][name]
+        >= policy["majorClassMinimumFrequency"]
+    ]
+    if major_zero:
+        reasons.append("major_zero_recall")
+    for metric, limit, reason in (
+        (
+            "maxClassShareError",
+            "maximumClassShareError",
+            "class_share_error",
+        ),
+        (
+            "totalVariationDistance",
+            "maximumTotalVariationDistance",
+            "total_variation_distance",
+        ),
+        (
+            "maxClassCalibrationError",
+            "maximumClassCalibrationError",
+            "class_calibration_error",
+        ),
+    ):
+        if candidate_metrics[metric] > policy[limit]:
+            reasons.append(reason)
+    return reasons
+
+
+def _tuning_routing_diagnostics(
+    global_probabilities: np.ndarray,
+    candidate_probabilities: np.ndarray,
+    routing: list[dict[str, object]],
+) -> dict[str, float | int]:
+    scales = np.asarray(
+        [float(value["effectiveScale"]) for value in routing],
+        dtype=float,
+    )
+    global_top = hierarchical_top_indices(
+        global_probabilities,
+        PITCH_GROUP_FAMILY_LABELS,
+    )
+    candidate_top = hierarchical_top_indices(
+        candidate_probabilities,
+        PITCH_GROUP_FAMILY_LABELS,
+    )
+    return {
+        "intervenedRows": int(np.count_nonzero(scales > 0)),
+        "interventionRate": float(np.mean(scales > 0)),
+        "meanEffectiveScale": float(np.mean(scales)),
+        "medianEffectiveScale": float(np.median(scales)),
+        "p90EffectiveScale": float(np.quantile(scales, 0.90)),
+        "top1ChangeRate": float(np.mean(global_top != candidate_top)),
+    }
+
+
+def _evaluate_dynamic_tuning(
+    rows_by_year: Mapping[int, pd.DataFrame],
+    global_by_year: Mapping[int, np.ndarray],
+    correction_by_year: Mapping[int, np.ndarray],
+    gate_by_year: Mapping[int, np.ndarray],
+    reliability_by_year: Mapping[
+        int, Mapping[int, Mapping[str, float | int]]
+    ],
+    manifest: Mapping[str, object],
+) -> dict[str, object]:
+    years = (2024, 2025)
+    policy = manifest["metricPolicy"]
+    records = []
+    for reliability_boost, gate_power in product(
+        manifest["reliabilityScaleBoosts"],
+        manifest["contextGatePowers"],
+    ):
+        yearly = {}
+        for year in years:
+            candidate, _, routing = apply_reliability_gated_residual(
+                rows_by_year[year],
+                global_by_year[year],
+                correction_by_year[year],
+                gate_by_year[year],
+                _routing_registry(reliability_by_year[year]),
+                reliability_scale_boost=float(reliability_boost),
+                context_gate_power=float(gate_power),
+            )
+            global_metrics = _metrics(
+                rows_by_year[year]["target"].to_numpy(),
+                global_by_year[year],
+            )
+            candidate_metrics = _metrics(
+                rows_by_year[year]["target"].to_numpy(),
+                candidate,
+            )
+            yearly[str(year)] = {
+                "globalMetrics": global_metrics,
+                "metrics": candidate_metrics,
+                "failureReasons": _tuning_failure_reasons(
+                    global_metrics,
+                    candidate_metrics,
+                    policy,
+                ),
+                "routing": _tuning_routing_diagnostics(
+                    global_by_year[year],
+                    candidate,
+                    routing,
+                ),
+            }
+        records.append(
+            {
+                "id": (
+                    f"reliability-{float(reliability_boost):g}"
+                    f"-gate-{float(gate_power):g}"
+                ),
+                "reliabilityScaleBoost": float(reliability_boost),
+                "contextGatePower": float(gate_power),
+                "years": yearly,
+            }
+        )
+
+    baseline = next(
+        record
+        for record in records
+        if record["reliabilityScaleBoost"] == 1
+        and record["contextGatePower"] == 1
+    )
+    eligible = [
+        record
+        for record in records
+        if record is not baseline
+        and all(not record["years"][str(year)]["failureReasons"] for year in years)
+        and all(
+            record["years"][str(year)]["metrics"]["logLoss"]
+            < baseline["years"][str(year)]["metrics"]["logLoss"]
+            for year in years
+        )
+    ]
+    if eligible:
+        best_loss = min(
+            record["years"]["2024"]["metrics"]["logLoss"]
+            for record in eligible
+        )
+        tolerance = float(
+            manifest["selectionPolicy"]["logLossTieTolerance"]
+        )
+        tied = [
+            record
+            for record in eligible
+            if record["years"]["2024"]["metrics"]["logLoss"]
+            <= best_loss + tolerance
+        ]
+        selected = max(
+            tied,
+            key=lambda record: (
+                record["years"]["2024"]["routing"]["interventionRate"],
+                record["years"]["2024"]["routing"]["meanEffectiveScale"],
+                record["years"]["2024"]["routing"]["top1ChangeRate"],
+            ),
+        )
+        status = "selected"
+    else:
+        selected = baseline
+        status = "retain-v7.0"
+    return {
+        "status": status,
+        "baselineId": baseline["id"],
+        "selectedId": selected["id"],
+        "selectedControls": {
+            "reliabilityScaleBoost": selected["reliabilityScaleBoost"],
+            "contextGatePower": selected["contextGatePower"],
+        },
+        "candidates": records,
+    }
+
+
+def _oof_registry(
+    registry: Mapping[int, RegistryEntry],
+    reliability: Mapping[int, Mapping[str, float | int]],
+) -> dict[int, RegistryEntry]:
+    return {
+        pitcher_id: replace(
+            entry,
+            enabled=entry.enabled and pitcher_id in reliability,
+            reliability=float(
+                reliability.get(pitcher_id, {}).get("reliability", 0)
+            ),
+            reliability_components=reliability.get(pitcher_id),
+            stale=False,
+        )
+        for pitcher_id, entry in registry.items()
+    }
+
+
+def _tuning_player_safety(
+    rows: pd.DataFrame,
+    global_probabilities: np.ndarray,
+    candidate_probabilities: np.ndarray,
+    registry: Mapping[int, RegistryEntry],
+    *,
+    minimum_support: int,
+) -> dict[str, object]:
+    ids = rows["pitcher_id"].to_numpy(dtype=int)
+    failures = []
+    audited = 0
+    for pitcher_id, entry in registry.items():
+        if not entry.enabled:
+            continue
+        positions = np.flatnonzero(ids == pitcher_id)
+        if len(positions) < minimum_support:
+            continue
+        audited += 1
+        global_metrics = _metrics(
+            rows["target"].to_numpy()[positions],
+            global_probabilities[positions],
+        )
+        candidate_metrics = _metrics(
+            rows["target"].to_numpy()[positions],
+            candidate_probabilities[positions],
+        )
+        reasons = relative_pitcher_failure_reasons(
+            global_metrics,
+            candidate_metrics,
+        )
+        if reasons:
+            failures.append(
+                {
+                    "pitcherId": pitcher_id,
+                    "support": int(len(positions)),
+                    "failureReasons": reasons,
+                }
+            )
+    return {
+        "minimumSupport": minimum_support,
+        "auditedPitchers": audited,
+        "failures": failures,
+        "passed": not failures,
+    }
+
+
+def _evaluate_limited_tuning(
+    rows_by_year: Mapping[int, pd.DataFrame],
+    global_by_year: Mapping[int, np.ndarray],
+    correction_by_year: Mapping[int, np.ndarray],
+    gate_by_year: Mapping[int, np.ndarray],
+    reliability_by_year: Mapping[
+        int, Mapping[int, Mapping[str, float | int]]
+    ],
+    registry: Mapping[int, RegistryEntry],
+    controls: Mapping[str, float],
+    manifest: Mapping[str, object],
+) -> dict[str, object]:
+    years = (2024, 2025)
+    policy = manifest["metricPolicy"]
+    records = []
+    for limited_boost in manifest["limitedScaleBoosts"]:
+        yearly = {}
+        for year in years:
+            candidate, _, routing = apply_reliability_gated_residual(
+                rows_by_year[year],
+                global_by_year[year],
+                correction_by_year[year],
+                gate_by_year[year],
+                _oof_registry(registry, reliability_by_year[year]),
+                limited_scale_boost=float(limited_boost),
+                reliability_scale_boost=float(
+                    controls["reliabilityScaleBoost"]
+                ),
+                context_gate_power=float(controls["contextGatePower"]),
+            )
+            global_metrics = _metrics(
+                rows_by_year[year]["target"].to_numpy(),
+                global_by_year[year],
+            )
+            candidate_metrics = _metrics(
+                rows_by_year[year]["target"].to_numpy(),
+                candidate,
+            )
+            player_safety = _tuning_player_safety(
+                rows_by_year[year],
+                global_by_year[year],
+                candidate,
+                registry,
+                minimum_support=(
+                    MIN_2024_EVALUATION_PITCHES
+                    if year == 2024
+                    else MIN_2025_EVALUATION_PITCHES
+                ),
+            )
+            yearly[str(year)] = {
+                "globalMetrics": global_metrics,
+                "metrics": candidate_metrics,
+                "failureReasons": _tuning_failure_reasons(
+                    global_metrics,
+                    candidate_metrics,
+                    policy,
+                ),
+                "routing": _tuning_routing_diagnostics(
+                    global_by_year[year],
+                    candidate,
+                    routing,
+                ),
+                "playerSafety": player_safety,
+            }
+        records.append(
+            {
+                "id": f"limited-{float(limited_boost):g}",
+                "limitedScaleBoost": float(limited_boost),
+                "years": yearly,
+            }
+        )
+    baseline = next(
+        record for record in records if record["limitedScaleBoost"] == 1
+    )
+    eligible = [
+        record
+        for record in records
+        if record is not baseline
+        and all(not record["years"][str(year)]["failureReasons"] for year in years)
+        and all(
+            record["years"][str(year)]["playerSafety"]["passed"]
+            for year in years
+        )
+        and all(
+            record["years"][str(year)]["metrics"]["logLoss"]
+            < baseline["years"][str(year)]["metrics"]["logLoss"]
+            for year in years
+        )
+    ]
+    if eligible:
+        best_loss = min(
+            record["years"]["2024"]["metrics"]["logLoss"]
+            for record in eligible
+        )
+        tolerance = float(
+            manifest["selectionPolicy"]["logLossTieTolerance"]
+        )
+        tied = [
+            record
+            for record in eligible
+            if record["years"]["2024"]["metrics"]["logLoss"]
+            <= best_loss + tolerance
+        ]
+        selected = max(
+            tied,
+            key=lambda record: (
+                record["years"]["2024"]["routing"]["interventionRate"],
+                record["years"]["2024"]["routing"]["meanEffectiveScale"],
+                record["years"]["2024"]["routing"]["top1ChangeRate"],
+            ),
+        )
+        status = "selected"
+    else:
+        selected = baseline
+        status = "retain-limited-1.0"
+    return {
+        "status": status,
+        "baselineId": baseline["id"],
+        "selectedId": selected["id"],
+        "selectedLimitedScaleBoost": selected["limitedScaleBoost"],
+        "candidates": records,
+    }
+
+
 def _gate_metrics(actual: np.ndarray, probabilities: np.ndarray) -> dict[str, float]:
     return {
         "logLoss": float(log_loss(actual, probabilities, labels=[0, 1])),
@@ -404,12 +810,72 @@ def _safe_scale_analysis(
     }
 
 
+def _joint_safe_scale_multiplier(
+    actual_by_year: Mapping[int, np.ndarray],
+    global_by_year: Mapping[int, np.ndarray],
+    correction_by_year: Mapping[int, np.ndarray],
+    routing_by_year: Mapping[int, list[dict[str, object]]],
+    positions_by_year: Mapping[int, np.ndarray],
+) -> float:
+    years = (2024, 2025)
+    if (
+        len(positions_by_year[2024]) < MIN_2024_EVALUATION_PITCHES
+        or len(positions_by_year[2025]) < MIN_2025_EVALUATION_PITCHES
+    ):
+        return 0.0
+    global_metrics = {
+        year: _metrics(
+            actual_by_year[year][positions_by_year[year]],
+            global_by_year[year][positions_by_year[year]],
+        )
+        for year in years
+    }
+    base_scales = {
+        year: np.asarray(
+            [
+                float(routing_by_year[year][position]["effectiveScale"])
+                for position in positions_by_year[year]
+            ]
+        )
+        for year in years
+    }
+    for multiplier in sorted(SAFE_SCALE_MULTIPLIERS, reverse=True):
+        if all(
+            not relative_pitcher_failure_reasons(
+                global_metrics[year],
+                _metrics(
+                    actual_by_year[year][positions_by_year[year]],
+                    apply_correction(
+                        global_by_year[year][positions_by_year[year]],
+                        correction_by_year[year][positions_by_year[year]],
+                        base_scales[year] * multiplier,
+                    ),
+                ),
+            )
+            for year in years
+        ):
+            return float(multiplier)
+    return 0.0
+
+
 def train_hybrid(
     rows: pd.DataFrame,
     model_directory: Path,
     *,
     pilot_pitchers: Mapping[int, str] = PILOT_PITCHERS,
+    tuning_manifest: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
+    if tuning_manifest is not None:
+        dates = rows["game_date"].dt.normalize()
+        if (
+            dates.min() < pd.Timestamp(str(tuning_manifest["dataStart"]))
+            or dates.max() > pd.Timestamp(str(tuning_manifest["dataEnd"]))
+            or dates.max()
+            >= pd.Timestamp(
+                str(tuning_manifest["forbiddenProspectiveStart"])
+            )
+        ):
+            raise ValueError("training rows violate residual tuning boundary")
     folds = validation_folds(rows)
     global_predictions: dict[int, np.ndarray] = {}
     global_actual: dict[int, np.ndarray] = {}
@@ -602,12 +1068,65 @@ def train_hybrid(
         pooled_global[2025],
         correction_2025,
     )
+    tuning_result = None
+    controls = {
+        "reliabilityScaleBoost": 1.0,
+        "contextGatePower": 1.0,
+    }
+    if tuning_manifest is not None:
+        tuning_result = _evaluate_dynamic_tuning(
+            {
+                2024: evaluation_rows_2024,
+                2025: pooled_rows[2025],
+            },
+            {
+                2024: evaluation_global_2024,
+                2025: pooled_global[2025],
+            },
+            {
+                2024: correction_2024[evaluation_mask],
+                2025: correction_2025,
+            },
+            {
+                2024: context_gate_2024,
+                2025: context_gate_2025,
+            },
+            {
+                2024: reliability_2024_development,
+                2025: reliability_2025,
+            },
+            tuning_manifest,
+        )
+        controls = tuning_result["selectedControls"]
+    candidate_2024, _, routing_2024 = apply_reliability_gated_residual(
+        evaluation_rows_2024,
+        evaluation_global_2024,
+        correction_2024[evaluation_mask],
+        context_gate_2024,
+        _routing_registry(reliability_2024_development),
+        reliability_scale_boost=float(
+            controls["reliabilityScaleBoost"]
+        ),
+        context_gate_power=float(controls["contextGatePower"]),
+    )
     candidate_2025, _, routing_2025 = apply_reliability_gated_residual(
         pooled_rows[2025],
         pooled_global[2025],
         correction_2025,
         context_gate_2025,
         _routing_registry(reliability_2025),
+        reliability_scale_boost=float(
+            controls["reliabilityScaleBoost"]
+        ),
+        context_gate_power=float(controls["contextGatePower"]),
+    )
+    aggregate_2024_candidate = _metrics(
+        evaluation_rows_2024["target"].to_numpy(),
+        candidate_2024,
+    )
+    aggregate_2024_passed = residual_passes(
+        aggregate_2024_global,
+        aggregate_2024_candidate,
     )
     aggregate_2025_global = _metrics(
         pooled_rows[2025]["target"].to_numpy(),
@@ -691,10 +1210,26 @@ def train_hybrid(
             min_support=MIN_2025_EVALUATION_PITCHES,
         )
         safe_multiplier_2024 = float(safe_2024["maxSafeMultiplier"])
-        safe_multiplier_2025 = float(safe_2025["maxSafeMultiplier"])
-        conservative_multiplier = min(
-            safe_multiplier_2024,
-            safe_multiplier_2025,
+        joint_safe_multiplier = _joint_safe_scale_multiplier(
+            {
+                2024: evaluation_rows_2024["target"].to_numpy(),
+                2025: pooled_rows[2025]["target"].to_numpy(),
+            },
+            {
+                2024: evaluation_global_2024,
+                2025: pooled_global[2025],
+            },
+            {
+                2024: correction_2024[evaluation_mask],
+                2025: correction_2025,
+            },
+            {2024: routing_2024, 2025: routing_2025},
+            {2024: positions_2024, 2025: positions_2025},
+        )
+        conservative_multiplier = (
+            joint_safe_multiplier
+            if len(positions_2025)
+            else safe_multiplier_2024
         )
         if aggregate_passed and validation_passed and test_passed:
             recommended_tier = "full"
@@ -735,6 +1270,7 @@ def train_hybrid(
                 "2024": safe_2024,
                 "2025": safe_2025,
                 "conservativeMultiplier": conservative_multiplier,
+                "jointSafeMultiplier": joint_safe_multiplier,
                 "recommendedTier": recommended_tier,
                 "registryMultiplier": registry_multiplier,
                 "stale": pitcher_id in stale_ids,
@@ -814,6 +1350,38 @@ def train_hybrid(
             },
         )
 
+    limited_tuning_result = None
+    limited_scale_boost = 1.0
+    if tuning_manifest is not None:
+        limited_tuning_result = _evaluate_limited_tuning(
+            {
+                2024: evaluation_rows_2024,
+                2025: pooled_rows[2025],
+            },
+            {
+                2024: evaluation_global_2024,
+                2025: pooled_global[2025],
+            },
+            {
+                2024: correction_2024[evaluation_mask],
+                2025: correction_2025,
+            },
+            {
+                2024: context_gate_2024,
+                2025: context_gate_2025,
+            },
+            {
+                2024: reliability_2024_development,
+                2025: reliability_2025,
+            },
+            registry,
+            controls,
+            tuning_manifest,
+        )
+        limited_scale_boost = float(
+            limited_tuning_result["selectedLimitedScaleBoost"]
+        )
+
     final_actual = np.concatenate(
         [global_actual[year] for year in (2023, 2024, 2025)]
     )
@@ -865,7 +1433,7 @@ def train_hybrid(
 
     result = {
         "schemaVersion": 7,
-        "modelVersion": "V7",
+        "modelVersion": "V7.2" if tuning_manifest is not None else "V7",
         "deploymentStatus": "shadow",
         "decisionRule": "family-sum-then-child",
         "pitchGroups": [str(group) for group in PITCH_GROUPS],
@@ -902,9 +1470,16 @@ def train_hybrid(
             "treeCount": residual_tree_count,
             "referenceScale": 0.5,
             "formula": (
-                "0.5 * n/(n+1000) * min(pAll,pRecent) * contextGate "
-                "* registryScaleMultiplier"
+                "min(0.5, reliabilityScaleBoost * "
+                "(0.5 * n/(n+1000) * min(pAll,pRecent))) "
+                "* contextGate^contextGatePower "
+                "* registryScaleMultiplier * limitedScaleBoost"
             ),
+            "reliabilityScaleBoost": float(
+                controls["reliabilityScaleBoost"]
+            ),
+            "contextGatePower": float(controls["contextGatePower"]),
+            "limitedScaleBoost": limited_scale_boost,
             "recentDays": 90,
             "bootstrapSamples": 500,
             "jsCap": 0.05,
@@ -951,6 +1526,15 @@ def train_hybrid(
             for pitcher_id, entry in registry.items()
         },
         "validation": validations,
+        "residualTuning": (
+            {
+                "manifest": tuning_manifest,
+                "dynamic": tuning_result,
+                "limited": limited_tuning_result,
+            }
+            if tuning_manifest is not None
+            else None
+        ),
     }
     _atomic_json(model_directory / "registry.json", result)
     return result
@@ -961,7 +1545,13 @@ def main() -> None:
     parser.add_argument("--data", type=Path, default=Path("data/raw/statcast"))
     parser.add_argument("--models", type=Path, default=Path("models/v7"))
     parser.add_argument("--runs", type=Path, default=Path("artifacts/runs"))
+    parser.add_argument("--tuning-manifest", type=Path)
     args = parser.parse_args()
+    tuning_manifest = (
+        load_residual_tuning_manifest(args.tuning_manifest)
+        if args.tuning_manifest
+        else None
+    )
     run = args.runs / datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     run.mkdir(parents=True, exist_ok=False)
     before = snapshot(Path.cwd())
@@ -969,7 +1559,11 @@ def main() -> None:
     _atomic_json(run / "resources-before.json", asdict(before))
     try:
         rows = _load_statcast(args.data)
-        result = train_hybrid(rows, args.models)
+        result = train_hybrid(
+            rows,
+            args.models,
+            tuning_manifest=tuning_manifest,
+        )
         _atomic_json(run / "result.json", result)
         _atomic_json(run / "resources-after.json", asdict(snapshot(Path.cwd())))
     except Exception as error:

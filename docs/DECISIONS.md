@@ -124,3 +124,24 @@ Exact·Family·Hierarchical·Macro F1 하락 0.5%p 이내, 주요 구종 zero re
 없음을 요구한다. TVD·class share·calibration과 선수별 쏠림도 사전에 동결한
 절대 한도 및 V5 대비 0.5%p 악화 허용치로 검사한다. 현재 limited roster는
 2024·2025 후향 데이터로 선택됐음을 모든 독립 검증 리포트에 명시한다.
+
+## 2026-07-28 — V7.2는 reliability와 Gate만 확대
+
+prospective 표본이 아직 0구인 동안 2022–2025 시간순 OOF로 Residual 적용
+강도를 다시 선택했다. 사전 고정한 9개 동적 후보 중 reliability 배율 1.5와
+Context Gate power 0.5를 채택했다. 이는 Gate 확률에 제곱근을 적용해 중간
+확률에서도 Residual을 더 신뢰한다.
+
+limited 추가 배율 1.5와 2.0은 전체 Log Loss를 더 낮췄지만 2024·2025에서
+각각 다수 선수의 Accuracy·Macro F1·zero recall·분포 조건을 악화시켜
+기각했다. 따라서 limited boost는 1.0으로 유지한다.
+
+기존의 `min(maxSafe2024, maxSafe2025)`는 분포 지표가 scale에 대해
+단조적이라고 잘못 가정했다. V7.2부터는 두 연도에서 동시에 안전한 5% 단위
+배율을 직접 찾는다. 최종 Registry는 `full 3 / limited 42 / shadow 53`이며
+OOF 선수별 실패는 두 연도 모두 0명이다.
+
+공개된 2026 구간은 후보 동결 뒤 회귀 진단에만 사용했다. V7.2는 V7.0보다
+개선됐지만 V5 고정 cohort의 Log Loss를 넘지 못했으므로 shadow를 유지한다.
+기존 V7.0/V7.1 prospective 후보는 표본이 0구인 상태에서 V7.2 단일 후보로
+대체한다.

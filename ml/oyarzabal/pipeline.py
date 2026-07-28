@@ -61,6 +61,9 @@ from .training import GLOBAL_SPEC, PILOT_PITCHERS, global_specs
 
 GAME_PK = 775300
 GAME_DATE = pd.Timestamp("2024-10-25")
+RELIABILITY_SCALE_BOOST = 1.5
+CONTEXT_GATE_POWER = 0.5
+LIMITED_SCALE_BOOST = 1.0
 
 
 def _atomic_json(path: Path, value: object) -> None:
@@ -105,9 +108,14 @@ def _prior_probabilities(
 
 def _parsed_probabilities(series: pd.Series) -> np.ndarray:
     rows = []
+    group_labels = {str(group) for group in PITCH_GROUPS}
     for value in series:
         raw = json.loads(value)
-        grouped = serialize_probabilities(normalize_group_probabilities(raw))
+        grouped = (
+            serialize_probabilities(raw)
+            if raw and set(raw) <= group_labels
+            else serialize_probabilities(normalize_group_probabilities(raw))
+        )
         rows.append([grouped[str(group)] for group in PITCH_GROUPS])
     return np.asarray(rows)
 
@@ -410,6 +418,8 @@ def _pregame_hybrid(
             development_correction[gate_evaluation],
             context_gate,
             temporary_registry,
+            reliability_scale_boost=RELIABILITY_SCALE_BOOST,
+            context_gate_power=CONTEXT_GATE_POWER,
         )
     )
     evaluation_rows = (
@@ -577,6 +587,9 @@ def _pregame_hybrid(
         game_context_gate,
         registry,
         prediction_dates=game["game_date"].dt.date.tolist(),
+        limited_scale_boost=LIMITED_SCALE_BOOST,
+        reliability_scale_boost=RELIABILITY_SCALE_BOOST,
+        context_gate_power=CONTEXT_GATE_POWER,
     )
     model_sources = []
     for _pitcher_id, source_type, route in zip(
@@ -587,7 +600,7 @@ def _pregame_hybrid(
             {
                 "type": source_type,
                 "label": (
-                    "V7 Hierarchical Incremental Residual"
+                    "V7.2 Reliability-tuned Residual"
                     if source_type != "global"
                     else "MLB Global XGBoost"
                 ),
@@ -611,9 +624,12 @@ def _pregame_hybrid(
         ],
         "residualSelection": {
             "formula": (
-                "0.5 * n/(n+1000) * min(pAll,pRecent) * contextGate "
+                "min(0.5, 1.5 * reliability) * sqrt(contextGate) "
                 "* registryScaleMultiplier"
             ),
+            "reliabilityScaleBoost": RELIABILITY_SCALE_BOOST,
+            "contextGatePower": CONTEXT_GATE_POWER,
+            "limitedScaleBoost": LIMITED_SCALE_BOOST,
             "tierCounts": dict(
                 sorted(
                     Counter(tiers.values()).items()
@@ -713,12 +729,12 @@ def build_demo(args: argparse.Namespace) -> None:
         "deploymentStatus": "shadow",
         "caveat": game_artifact["caveat"],
         "dataScope": data_scope,
-        "finalModel": "v7-hierarchical-incremental-residual",
+        "finalModel": "v7.2-reliability-tuned-residual",
         "pitchGroups": group_names(),
         "pitchFamilies": family_names(),
         "pitchGroupFamilies": group_families(),
         "models": {
-            "final": "V7 Hierarchical Incremental Residual (Shadow)",
+            "final": "V7.2 Reliability-tuned Residual (Shadow)",
             "xgboost": "MLB Global XGBoost",
             "similarity": "PitchPredict Similarity",
             "baseline": "상황별 빈도 기준선",
@@ -730,7 +746,7 @@ def build_demo(args: argparse.Namespace) -> None:
                 for specialist in experiment["specialists"].values()
             ),
             "referenceName": GLOBAL_SPEC.name,
-            "selectedName": "v7-hierarchical-incremental-residual",
+            "selectedName": "v7.2-reliability-tuned-residual",
             "folds": ["pregame-chronological-validation"],
             "candidates": experiment["validation"],
             "specialists": experiment["specialists"],

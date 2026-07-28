@@ -267,3 +267,25 @@ Git revision:
   두 후보 모두 `awaiting_data`, V7 전체는 `shadow`를 유지한다.
 - limited roster는 2024·2025에서 후향 선택됐으며, 독립 검증은 이 cohort를
   고정한 채 앞으로 들어오는 투구만 평가한다.
+
+## 2026-07-28 — V7.2 Residual 강도 확대
+
+- `config/v7-residual-tuning.json`에 reliability boost 3개, Gate power
+  3개, limited boost 3개와 안전 조건을 결과 확인 전에 고정했다.
+- 2024 선택·2025 확인에서 `reliabilityScaleBoost=1.5`,
+  `contextGatePower=0.5`가 두 해 모두 V7.0보다 Log Loss와 세 정확도를
+  개선해 선택됐다.
+- limited boost 1.5와 2.0은 전체 Log Loss를 추가 개선했지만 각각
+  15–16명, 19–21명의 선수별 안전 조건을 실패해 기각했다.
+- 기존 Registry가 연도별 최대 안전 배율의 최솟값을 사용해 더 작은 배율에서
+  오히려 분포 조건을 실패할 수 있음을 발견했다. 두 해의 안전 배율 교집합을
+  직접 선택하도록 수정한 뒤 limited boost 1.0의 OOF 실패 선수는
+  2024·2025 모두 0명이 됐다.
+- 최종 Registry는 `full 3 / limited 42 / shadow 53`이다.
+- 후보 선택 이후 공개 2026-03-25~07-25를 한 번 진단했다. V7.2는 V7.0
+  대비 MLB 전체 Log Loss 1.13593→1.13588, 고정 30명 Log Loss
+  1.25154→1.25080으로 개선했다.
+- 공개 2026의 non-zero effective scale 평균은 0.125→0.157, p90은
+  0.249→0.387로 증가했다. 개입 투구는 44,829→42,518로 줄었다.
+- V5 고정 30명 Log Loss 1.24217은 넘지 못했으므로 V7.2는 shadow를
+  유지하고 2026-07-26 이후 첫 prospective look만 승격 근거로 사용한다.

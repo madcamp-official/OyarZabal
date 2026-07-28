@@ -330,12 +330,26 @@ def _predict_models(
     *,
     limited_scale_boosts: Sequence[float] = (1.0,),
 ) -> dict[str, object]:
-    boosts = tuple(dict.fromkeys((1.0, *map(float, limited_scale_boosts))))
-    if any(boost <= 0 for boost in boosts):
-        raise ValueError("limited scale boosts must be positive")
     registry_path = model_directory / "registry.json"
     registry_payload = json.loads(registry_path.read_text(encoding="utf-8"))
     registry = _registry(registry_payload)
+    residual_config = registry_payload.get("residual", {})
+    default_limited_boost = float(
+        residual_config.get("limitedScaleBoost", 1.0)
+    )
+    reliability_scale_boost = float(
+        residual_config.get("reliabilityScaleBoost", 1.0)
+    )
+    context_gate_power = float(
+        residual_config.get("contextGatePower", 1.0)
+    )
+    boosts = tuple(
+        dict.fromkeys(
+            (default_limited_boost, *map(float, limited_scale_boosts))
+        )
+    )
+    if any(boost <= 0 for boost in boosts):
+        raise ValueError("limited scale boosts must be positive")
 
     global_path = model_directory / str(registry_payload["global"]["model"])
     residual_path = model_directory / str(registry_payload["residual"]["model"])
@@ -391,6 +405,8 @@ def _predict_models(
                         value.date() for value in rows["game_date"]
                     ],
                     limited_scale_boost=boost,
+                    reliability_scale_boost=reliability_scale_boost,
+                    context_gate_power=context_gate_power,
                 )
             )
             candidates[boost] = {
@@ -435,7 +451,7 @@ def _predict_models(
             }
             for boost in boosts
         }
-    base = candidates[1.0]
+    base = candidates[default_limited_boost]
     return {
         "registryPayload": registry_payload,
         "registry": registry,
@@ -462,6 +478,26 @@ def _paired(
         candidate,
         samples=samples,
     )
+
+
+def _scale_summary(values: np.ndarray) -> dict[str, float | int | None]:
+    scales = np.asarray(values, dtype=float)
+    non_zero = scales[scales > 0]
+    return {
+        "p10": float(np.quantile(scales, 0.10)),
+        "p50": float(np.quantile(scales, 0.50)),
+        "p90": float(np.quantile(scales, 0.90)),
+        "nonZero": int(len(non_zero)),
+        "nonZeroMean": (
+            float(np.mean(non_zero)) if len(non_zero) else None
+        ),
+        "nonZeroP50": (
+            float(np.quantile(non_zero, 0.50)) if len(non_zero) else None
+        ),
+        "nonZeroP90": (
+            float(np.quantile(non_zero, 0.90)) if len(non_zero) else None
+        ),
+    }
 
 
 def _breakdowns(
@@ -675,12 +711,7 @@ def _prospective_candidate_result(
             and player_safety["passed"]
         ),
         "routingDiagnostics": {
-            "effectiveScale": {
-                "p10": float(np.quantile(scale_values, 0.10)),
-                "p50": float(np.quantile(scale_values, 0.50)),
-                "p90": float(np.quantile(scale_values, 0.90)),
-                "nonZero": intervened,
-            },
+            "effectiveScale": _scale_summary(scale_values),
             "capReasons": dict(
                 sorted(
                     Counter(
@@ -1228,12 +1259,7 @@ def evaluate_frozen_holdout(
         "prospectiveValidation": prospective_validation,
         "routing": dict(sorted(Counter(sources).items())),
         "routingDiagnostics": {
-            "effectiveScale": {
-                "p10": float(np.quantile(scale_values, 0.10)),
-                "p50": float(np.quantile(scale_values, 0.50)),
-                "p90": float(np.quantile(scale_values, 0.90)),
-                "nonZero": int(np.count_nonzero(scale_values > 0)),
-            },
+            "effectiveScale": _scale_summary(scale_values),
             "capReasons": dict(sorted(cap_counts.items())),
             "hardGateReasons": dict(sorted(hard_counts.items())),
         },
@@ -1250,7 +1276,7 @@ def main() -> None:
     parser.add_argument(
         "--holdout", type=Path, default=Path("data/holdout/statcast-2026")
     )
-    parser.add_argument("--models", type=Path, default=Path("models/v7"))
+    parser.add_argument("--models", type=Path, default=Path("models/v7.2"))
     parser.add_argument("--reference-models", type=Path)
     parser.add_argument("--start", type=pd.Timestamp)
     parser.add_argument("--prospective-manifest", type=Path)

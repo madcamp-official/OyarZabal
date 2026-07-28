@@ -437,9 +437,15 @@ def apply_reliability_gated_residual(
     *,
     prediction_dates: Sequence[date] | None = None,
     limited_scale_boost: float = 1.0,
+    reliability_scale_boost: float = 1.0,
+    context_gate_power: float = 1.0,
 ) -> tuple[np.ndarray, list[str], list[dict[str, object]]]:
-    if limited_scale_boost <= 0:
-        raise ValueError("limited scale boost must be positive")
+    if (
+        limited_scale_boost <= 0
+        or reliability_scale_boost <= 0
+        or context_gate_power <= 0
+    ):
+        raise ValueError("residual scale controls must be positive")
     global_values = validate_probability_matrix(global_probabilities)
     residual_values = np.asarray(correction, dtype=float)
     gate_values = np.asarray(context_gate, dtype=float)
@@ -481,9 +487,16 @@ def apply_reliability_gated_residual(
                 )
             base_reliability[int(position)] = reliability
             hard_reasons[int(position)] = safety_reasons[int(position)]
+            adjusted_reliability = min(
+                reliability * reliability_scale_boost,
+                0.5,
+            )
+            adjusted_gate = (
+                float(gate_values[int(position)]) ** context_gate_power
+            )
             requested[int(position)] = effective_residual_scale(
-                reliability,
-                float(gate_values[int(position)]),
+                adjusted_reliability,
+                adjusted_gate,
                 hard_safety_pass=bool(safety[int(position)]),
             ) * entry.scale_multiplier
             if entry.status == "limited":
@@ -502,7 +515,12 @@ def apply_reliability_gated_residual(
     routing = [
         {
             "pitcherReliability": float(reliability),
+            "adjustedPitcherReliability": min(
+                float(reliability) * reliability_scale_boost,
+                0.5,
+            ),
             "contextGate": float(gate),
+            "adjustedContextGate": float(gate) ** context_gate_power,
             "effectiveScale": float(scale),
             "registryTier": (
                 registry.get(int(pitcher_id)).status
@@ -520,6 +538,8 @@ def apply_reliability_gated_residual(
                 and registry[int(pitcher_id)].status == "limited"
                 else 1.0
             ),
+            "reliabilityScaleBoost": float(reliability_scale_boost),
+            "contextGatePower": float(context_gate_power),
             "capReason": cap_reason,
             "hardGateReason": hard_reason,
         }

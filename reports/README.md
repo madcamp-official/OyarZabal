@@ -6,17 +6,18 @@
 버전 우위로 해석하지 않는다.
 
 > [!IMPORTANT]
-> **현재 결론:** V7은 6종 아래 3개 계열과 증분 `full / limited / shadow`
-> Registry를 적용했다. 공식 선택은 `계열 합산 → 계열 내부 구종`이다.
-> full·limited는 자체 Global보다 개선됐지만 V5의 30명·28,734구 고정
-> cohort에서는 Log Loss가 0.0094 나빠 prospective
-> 평가 전까지 shadow를 유지한다.
+> **현재 결론:** V7.2는 reliability와 Gate 적용 강도를 높이고 두 연도 공통
+> 안전 배율을 사용한다. V7.0보다 OOF와 공개 2026 회귀 진단이 개선됐지만,
+> V5의 30명·28,734구 고정 cohort에서는 Log Loss가 0.0086 나쁘다.
+> prospective 평가 전까지 shadow를 유지한다.
 
 V7의 실제 Registry와 계층형 지표 결과는
 [V7 리포트](2026-07-27-v7-hierarchical-incremental.md)에 정리했다.
 독립 승격 절차와 현재 수집 상태는
 [V7 prospective 동결 리포트](2026-07-28-v7-prospective-freeze.md)에
 정리했다.
+[V7.2 Residual 튜닝 리포트](2026-07-28-v7.2-residual-tuning.md)는
+누수 없는 OOF 탐색, 선수별 안전성, 공개 2026 회귀 진단을 함께 기록한다.
 
 ## 모델 진화 흐름
 
@@ -29,7 +30,8 @@ flowchart TD
     V5["V5 · V4 구조의 2026 외부 검증<br/>전체 +0.11%p · 적용 범위 +1.83%p"]
     V6["V6 · Reliability Gate<br/>고정 cohort에서 V5 열세 · shadow"]
     V7["V7 · 계층 decoder + 증분 Registry<br/>full 4 · limited 43 · shadow 51"]
-    V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7
+    V72["V7.2 · reliability/Gate 확대<br/>full 3 · limited 42 · shadow 53"]
+    V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7 --> V72
 ```
 
 ## 버전 요약
@@ -43,6 +45,7 @@ flowchart TD
 | [V5](2026-07-27-frozen-holdout.md) | **V4 구조 외부 검증** | 2026 **MLB 전체 동일 표본** 459,530구 | 47.62% → **47.73%** | 46.47% → **46.50%** | 1.1452 → **1.1437** | 제품 단위 개선 확인 |
 | [V6](2026-07-27-v6-reliability-gate.md) | Calibration + reliability gate | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.99% | 39.23% → **39.31%** | **1.2422** → 1.2475 | 새 decoder 재평가 · Shadow |
 | [V7](2026-07-27-v7-hierarchical-incremental.md) | 계층 decoder + 증분 Registry | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.53% | 39.23% → **39.77%** | **1.2422** → 1.2515 | Registry 재판정 · Shadow |
+| [V7.2](2026-07-28-v7.2-residual-tuning.md) | reliability/Gate 확대 + 공통 안전 배율 | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.68% | 39.23% → **39.82%** | **1.2422** → 1.2508 | V7.0 개선 · Shadow |
 
 V1과 V2는 포심·싱커·커터·슬라이더·커브·체인지업 taxonomy다. V3 이후는
 포심·무빙 패스트볼·슬라이더 계열·커브 계열·체인지업·스플리터/포크
