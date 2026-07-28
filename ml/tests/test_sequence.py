@@ -1,12 +1,14 @@
 import numpy as np
 import pandas as pd
 import pytest
+from oyarzabal.features import prepare_pitch_rows
 from oyarzabal.sequence import (
     HierarchicalSequenceTransformer,
     SequenceExampleBuilder,
     SequenceNormalizer,
     SequenceVocabulary,
     blend_log_probabilities,
+    inverse_sqrt_weights,
 )
 
 
@@ -86,6 +88,35 @@ def test_current_and_future_values_never_enter_current_sequence_input():
         np.testing.assert_array_equal(before_batch[name], after_batch[name])
 
 
+def test_repertoire_is_point_in_time_and_excludes_current_pitch():
+    original = _rows()
+    changed = original.copy()
+    changed.loc[2:, "pitch_type"] = ["KC", "FS", "FC"]
+    before, vocabulary = _examples(original)
+    after = SequenceExampleBuilder(length=4).build(changed, vocabulary)
+    before = before.with_repertoire(prepare_pitch_rows([original]))
+    after = after.with_repertoire(prepare_pitch_rows([changed]))
+
+    np.testing.assert_allclose(
+        before.repertoire_context[:3],
+        after.repertoire_context[:3],
+    )
+    assert before.repertoire_context.shape == (5, 18)
+
+
+def test_inverse_sqrt_weights_are_fold_local_mean_one_and_bounded():
+    training = np.array([0] * 12 + [1] * 8 + [2] * 6 + [3] * 4 + [4] * 3 + [5])
+    changed_outside_fold = np.concatenate([training, np.full(100, 5)])
+
+    weights = inverse_sqrt_weights(training, 6)
+    outside_ignored = inverse_sqrt_weights(changed_outside_fold[: len(training)], 6)
+
+    np.testing.assert_allclose(weights, outside_ignored)
+    assert weights.mean() == pytest.approx(1)
+    assert weights.min() >= 0.5
+    assert weights.max() <= 3
+
+
 def test_pa_game_boundaries_and_catcher_change_are_point_in_time():
     examples, vocabulary = _examples(_rows())
     third_history = examples.history_indices[2]
@@ -143,13 +174,23 @@ def test_zero_sequence_blend_is_exact_global_fallback():
         ),
         global_probabilities,
     )
+    np.testing.assert_allclose(
+        blend_log_probabilities(
+            np.repeat(global_probabilities, 2, axis=0),
+            np.repeat(sequence_probabilities, 2, axis=0),
+            np.array([0, 0.25]),
+        )[0],
+        global_probabilities[0],
+    )
 
 
 def test_transformer_is_causal_and_joint_probabilities_sum_to_one():
     torch = pytest.importorskip("torch")
     rows = _rows()
     vocabulary = SequenceVocabulary.fit(rows)
-    examples = SequenceExampleBuilder(length=16).build(rows, vocabulary)
+    examples = SequenceExampleBuilder(length=16).build(
+        rows, vocabulary
+    ).with_repertoire(prepare_pitch_rows([rows]))
     normalizer = SequenceNormalizer.fit(examples, np.array([0, 1, 2]))
     numpy_batch = examples.batch(np.array([2, 3]), normalizer)
     batch = {
@@ -166,6 +207,7 @@ def test_transformer_is_causal_and_joint_probabilities_sum_to_one():
     model = HierarchicalSequenceTransformer(
         len(vocabulary.descriptions) + 1,
         length=16,
+        current_numeric_width=examples.current_numeric.shape[1],
     ).to(device).eval()
     with torch.no_grad():
         output = model(batch)
