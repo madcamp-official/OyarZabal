@@ -94,10 +94,20 @@ def collect_statcast_shards(
 
     for window_start, window_end in month_windows(start, end):
         path = output / f"{window_start:%Y-%m}.parquet"
+        existing = None
         if _valid_shard(path, columns):
-            skipped += 1
-            shards.append({"path": str(path), "status": "skipped"})
-            continue
+            existing = pd.read_parquet(path, columns=list(columns))
+            dates = pd.to_datetime(existing["game_date"], errors="coerce")
+            latest = dates.max()
+            if pd.notna(latest) and latest.date() >= window_end:
+                skipped += 1
+                shards.append({"path": str(path), "status": "skipped"})
+                continue
+            if pd.notna(latest):
+                window_start = max(
+                    window_start,
+                    latest.date(),
+                )
 
         check()
         for attempt in range(1, 4):
@@ -113,12 +123,27 @@ def collect_statcast_shards(
         if missing and not frame.empty:
             raise ValueError(f"Statcast response is missing columns: {sorted(missing)}")
         selected = frame.reindex(columns=columns)
+        if existing is not None:
+            selected = pd.concat([existing, selected], ignore_index=True)
+            identity = ("game_pk", "at_bat_number", "pitch_number")
+            selected = selected.drop_duplicates(
+                subset=(
+                    list(identity)
+                    if set(identity) <= set(selected.columns)
+                    else list(selected.columns)
+                ),
+                keep="last",
+            )
         temporary = path.with_suffix(".parquet.tmp")
         selected.to_parquet(temporary, index=False)
         temporary.replace(path)
-        downloaded_rows += len(selected)
+        downloaded_rows += len(frame)
         shards.append(
-            {"path": str(path), "status": "downloaded", "rows": len(selected)}
+            {
+                "path": str(path),
+                "status": "extended" if existing is not None else "downloaded",
+                "rows": len(selected),
+            }
         )
         print(f"saved {path} ({len(selected):,} rows)")
 
