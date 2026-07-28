@@ -330,12 +330,26 @@ def _predict_models(
     *,
     limited_scale_boosts: Sequence[float] = (1.0,),
 ) -> dict[str, object]:
-    boosts = tuple(dict.fromkeys((1.0, *map(float, limited_scale_boosts))))
-    if any(boost <= 0 for boost in boosts):
-        raise ValueError("limited scale boosts must be positive")
     registry_path = model_directory / "registry.json"
     registry_payload = json.loads(registry_path.read_text(encoding="utf-8"))
     registry = _registry(registry_payload)
+    residual_config = registry_payload.get("residual", {})
+    default_limited_boost = float(
+        residual_config.get("limitedScaleBoost", 1.0)
+    )
+    reliability_scale_boost = float(
+        residual_config.get("reliabilityScaleBoost", 1.0)
+    )
+    context_gate_power = float(
+        residual_config.get("contextGatePower", 1.0)
+    )
+    boosts = tuple(
+        dict.fromkeys(
+            (default_limited_boost, *map(float, limited_scale_boosts))
+        )
+    )
+    if any(boost <= 0 for boost in boosts):
+        raise ValueError("limited scale boosts must be positive")
 
     global_path = model_directory / str(registry_payload["global"]["model"])
     residual_path = model_directory / str(registry_payload["residual"]["model"])
@@ -391,6 +405,8 @@ def _predict_models(
                         value.date() for value in rows["game_date"]
                     ],
                     limited_scale_boost=boost,
+                    reliability_scale_boost=reliability_scale_boost,
+                    context_gate_power=context_gate_power,
                 )
             )
             candidates[boost] = {
@@ -435,7 +451,7 @@ def _predict_models(
             }
             for boost in boosts
         }
-    base = candidates[1.0]
+    base = candidates[default_limited_boost]
     return {
         "registryPayload": registry_payload,
         "registry": registry,

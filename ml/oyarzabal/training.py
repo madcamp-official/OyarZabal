@@ -42,6 +42,7 @@ from .residual import (
     pitcher_residual_passes,
     predict_context_gate,
     predict_correction,
+    relative_pitcher_failure_reasons,
     residual_passes,
     train_final_residual,
     train_gate,
@@ -589,6 +590,52 @@ def _oof_registry(
     }
 
 
+def _tuning_player_safety(
+    rows: pd.DataFrame,
+    global_probabilities: np.ndarray,
+    candidate_probabilities: np.ndarray,
+    registry: Mapping[int, RegistryEntry],
+    *,
+    minimum_support: int,
+) -> dict[str, object]:
+    ids = rows["pitcher_id"].to_numpy(dtype=int)
+    failures = []
+    audited = 0
+    for pitcher_id, entry in registry.items():
+        if not entry.enabled:
+            continue
+        positions = np.flatnonzero(ids == pitcher_id)
+        if len(positions) < minimum_support:
+            continue
+        audited += 1
+        global_metrics = _metrics(
+            rows["target"].to_numpy()[positions],
+            global_probabilities[positions],
+        )
+        candidate_metrics = _metrics(
+            rows["target"].to_numpy()[positions],
+            candidate_probabilities[positions],
+        )
+        reasons = relative_pitcher_failure_reasons(
+            global_metrics,
+            candidate_metrics,
+        )
+        if reasons:
+            failures.append(
+                {
+                    "pitcherId": pitcher_id,
+                    "support": int(len(positions)),
+                    "failureReasons": reasons,
+                }
+            )
+    return {
+        "minimumSupport": minimum_support,
+        "auditedPitchers": audited,
+        "failures": failures,
+        "passed": not failures,
+    }
+
+
 def _evaluate_limited_tuning(
     rows_by_year: Mapping[int, pd.DataFrame],
     global_by_year: Mapping[int, np.ndarray],
@@ -627,6 +674,17 @@ def _evaluate_limited_tuning(
                 rows_by_year[year]["target"].to_numpy(),
                 candidate,
             )
+            player_safety = _tuning_player_safety(
+                rows_by_year[year],
+                global_by_year[year],
+                candidate,
+                registry,
+                minimum_support=(
+                    MIN_2024_EVALUATION_PITCHES
+                    if year == 2024
+                    else MIN_2025_EVALUATION_PITCHES
+                ),
+            )
             yearly[str(year)] = {
                 "globalMetrics": global_metrics,
                 "metrics": candidate_metrics,
@@ -640,6 +698,7 @@ def _evaluate_limited_tuning(
                     candidate,
                     routing,
                 ),
+                "playerSafety": player_safety,
             }
         records.append(
             {
@@ -656,6 +715,10 @@ def _evaluate_limited_tuning(
         for record in records
         if record is not baseline
         and all(not record["years"][str(year)]["failureReasons"] for year in years)
+        and all(
+            record["years"][str(year)]["playerSafety"]["passed"]
+            for year in years
+        )
         and all(
             record["years"][str(year)]["metrics"]["logLoss"]
             < baseline["years"][str(year)]["metrics"]["logLoss"]
