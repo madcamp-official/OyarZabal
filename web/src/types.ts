@@ -97,6 +97,11 @@ export interface Manifest {
   caveat: string;
   finalModel: string;
   deploymentStatus: "shadow" | "active";
+  deploymentBasis: "taxonomy-product-generation" | "candidate-evaluation";
+  performanceCertification:
+    | "prospective-pending"
+    | "prospective-passed"
+    | "not-applicable";
   dataScope?: {
     startDate: string;
     endDate: string;

@@ -4,7 +4,8 @@
 
 완료된 MLB 경기를 한 구씩 재생하며 다음 구종의 6개 확률과 3개 계열 확률을
 함께 보여준다. 개인화는 Global보다 안전하게 나아지는 선수에게만 적용하고,
-2026-07-26 이후 prospective 평가 전까지 V7.2 전체 배포 상태는 shadow로 둔다.
+V7.2를 현재 taxonomy·제품 계약의 기본 세대로 active 배포한다. 2026-07-26
+이후 prospective 평가는 별도의 사후 성능 인증으로 유지한다.
 
 ## 계층형 구종
 
@@ -80,8 +81,9 @@ effective scale =
   사용하며 exact row fingerprint를 검사한다.
 - tier별 표본은 운영 진단일 뿐 버전 우위 판단 표본이 아니다.
 - 2026-07-26 이후 데이터만 지정해 최소 30일·전체 100,000구·V7 개입
-  15,000구를 채운 첫 look에서 V5와 paired game bootstrap으로 승격을
-  판단한다. 그전 `deploymentStatus`는 `shadow`다.
+  15,000구를 채운 첫 look에서 paired game bootstrap으로 사후 성능을
+  인증한다. `deploymentStatus=active`와 별개로 인증 전 상태는
+  `performanceCertification=prospective-pending`이다.
 - 2024 OOF 선택과 2025 OOF 확인으로 reliability boost 1.5와 Context Gate
   power 0.5를 선택했다. limited 추가 boost는 선수별 안전 조건 때문에
   1.0으로 유지한다.

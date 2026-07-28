@@ -145,3 +145,15 @@ OOF 선수별 실패는 두 연도 모두 0명이다.
 개선됐지만 V5 고정 cohort의 Log Loss를 넘지 못했으므로 shadow를 유지한다.
 기존 V7.0/V7.1 prospective 후보는 표본이 0구인 상태에서 V7.2 단일 후보로
 대체한다.
+
+## 2026-07-28 — V7.2를 현재 taxonomy 기본 세대로 승격
+
+V5 대비 통계적 성능 승격이 아니라 taxonomy·계층 decoder·Registry·UI 계약의
+세대교체로 V7.2를 `active`로 지정한다. V5는 삭제하지 않고 legacy 비교
+기준으로 보존한다.
+
+선수별 Registry의 `shadow`는 계속 Global fallback을 뜻하며 모델 전체
+`deploymentStatus=active`와 구분한다. prospective 단일 look도 폐기하지
+않고 `performanceCertification=prospective-pending` 상태의 사후 성능
+인증으로 유지한다. 향후 V8의 주 기준선은 같은 taxonomy의 Global-only와
+V7.2로 정한다.

@@ -3,7 +3,9 @@
   "decisionRule": "family-sum-then-child",
   "generatedAt": "2026-07-28T04:47:53.801503+00:00",
   "evaluationMode": "historical_showcase",
-  "deploymentStatus": "shadow",
+  "deploymentStatus": "active",
+  "deploymentBasis": "taxonomy-product-generation",
+  "performanceCertification": "prospective-pending",
   "caveat": "제품 검증용 역사적 쇼케이스이며, 동결된 2026 홀드아웃 결과가 아닙니다.",
   "dataScope": {
     "startDate": "2022-03-17",
@@ -34,7 +36,7 @@
     "SPLITTER_FORK": "OFFSPEED"
   },
   "models": {
-    "final": "V7.2 Reliability-tuned Residual (Shadow)",
+    "final": "V7.2 Reliability-tuned Residual (Current)",
     "xgboost": "MLB Global XGBoost",
     "similarity": "PitchPredict Similarity",
     "baseline": "상황별 빈도 기준선"

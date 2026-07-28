@@ -63,11 +63,13 @@ registry에서 2026 데이터가 감지되면 중단합니다.
 버전 간 개인화 비교는 V5 활성 선수 30명을 동결한
 `v5-enabled-pitchers-v1` cohort를 자동으로 사용합니다. 같은 benchmark의
 정확한 투구가 달라지면 row fingerprint 검사에서 평가가 중단됩니다.
-V7.2 Registry는 선수를 `full / limited / shadow`로 나누며, prospective 승격
-전까지 제품 배포 상태는 shadow입니다.
+V7.2 Registry는 선수를 `full / limited / shadow`로 나누며, 모델 전체는
+현재 taxonomy·제품 구조의 기본 세대로 `active`입니다. 선수별 `shadow`는
+해당 선수에게 Global만 적용한다는 뜻이며 모델 전체 배포 상태와 다릅니다.
 독립 검증 후보는 reliability boost `1.5`, Gate power `0.5`, limited boost
-`1.0`으로 동결했습니다. 2026-07-26 이후 최소 30일·100,000구·Residual 개입
-15,000구가 모이기 전에는 성능 지표를 열지 않습니다.
+`1.0`으로 동결했습니다. prospective 평가는 배포 승격이 아니라 사후 성능
+인증이며, 2026-07-26 이후 최소 30일·100,000구·Residual 개입 15,000구가
+모이기 전에는 성능 지표를 열지 않습니다.
 
 ## Codex Worktree
 
