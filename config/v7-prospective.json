@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "frozenAt": "2026-07-28",
+  "prospectiveStart": "2026-07-26",
+  "singleLook": true,
+  "noRetuningFromProspectiveData": true,
+  "cohortNote": "The limited roster was selected retrospectively from 2024 and 2025 data and is frozen for this prospective evaluation.",
+  "candidates": [
+    {
+      "id": "v7.1-limited-1.5",
+      "limitedScaleBoost": 1.5,
+      "promotionPriority": 1
+    },
+    {
+      "id": "v7.0-limited-1.0",
+      "limitedScaleBoost": 1.0,
+      "promotionPriority": 2
+    }
+  ],
+  "candidateModelSha256": {
+    "global.pkl": "47d4dad107b9db3d036d8fac8acfde0c14797657a25eaa6c3175cccead30f275",
+    "pooled-residual.pkl": "eacd38449952b93c80b3fe97e44747d3b091dc9d1281b7d74d3bbb76fff2a525",
+    "context-gate.pkl": "6a3b145bc3435252490c1e86a13df10327304c599b0433667b8b807c01309105",
+    "registry.json": "b57f1898ea33d0c58c9af5eaeb962f4cbf8f82b821747da062811c4fd4884237"
+  },
+  "referenceModelSha256": {
+    "global.pkl": "47d4dad107b9db3d036d8fac8acfde0c14797657a25eaa6c3175cccead30f275",
+    "pooled-residual.pkl": "14295359108c440f0d6aad983ef1315ec20fffd07b427edea1b01c08e3e0f4fa",
+    "registry.json": "7689498063203523b28295bb11371b4380069ae25e09b0cbc0e62f5a400b3212"
+  },
+  "firstLook": {
+    "minimumDays": 30,
+    "minimumRows": 100000,
+    "minimumIntervenedRows": 15000,
+    "bootstrapSamples": 1000,
+    "minimumAuditedPitchers": 1,
+    "minimumPlayerSupport": 300
+  },
+  "metricPolicy": {
+    "logLossGainCiLowerMustExceed": 0,
+    "maximumAccuracyDrop": 0.005,
+    "maximumFamilyAccuracyDrop": 0.005,
+    "maximumHierarchicalAccuracyDrop": 0.005,
+    "maximumMacroF1Drop": 0.005,
+    "maximumDistributionRegression": 0.005,
+    "maximumClassShareError": 0.2,
+    "maximumTotalVariationDistance": 0.2,
+    "maximumClassCalibrationError": 0.1,
+    "majorClassMinimumFrequency": 0.05
+  }
+}

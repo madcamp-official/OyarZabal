@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,9 +8,13 @@ from oyarzabal.holdout import (
     COMPARISON_COHORT_ID,
     V5_EVALUATION_PITCHER_IDS,
     _registry,
+    evaluate_frozen_holdout,
     evaluation_sample_fingerprint,
     frozen_rows,
+    load_prospective_manifest,
     promotion_sample_is_prospective,
+    prospective_metric_failure_reasons,
+    prospective_sample_status,
 )
 
 
@@ -165,3 +170,140 @@ def test_only_post_cutoff_rows_are_prospective() -> None:
 
     assert promotion_sample_is_prospective(opened) is False
     assert promotion_sample_is_prospective(future) is True
+
+
+def test_v7_prospective_manifest_freezes_candidates_and_policy() -> None:
+    manifest = load_prospective_manifest(
+        Path("config/v7-prospective.json")
+    )
+
+    assert manifest["prospectiveStart"] == "2026-07-26"
+    assert [
+        (candidate["id"], candidate["limitedScaleBoost"])
+        for candidate in manifest["candidates"]
+    ] == [
+        ("v7.1-limited-1.5", 1.5),
+        ("v7.0-limited-1.0", 1.0),
+    ]
+    assert (
+        manifest["metricPolicy"]["maximumDistributionRegression"]
+        == 0.005
+    )
+
+
+def test_prospective_sample_status_excludes_opened_2026_rows() -> None:
+    manifest = load_prospective_manifest(
+        Path("config/v7-prospective.json")
+    )
+    rows = pd.DataFrame(
+        {
+            "game_date": pd.to_datetime(
+                ["2026-07-25", "2026-07-26", "2026-08-24"]
+            )
+        }
+    )
+
+    status = prospective_sample_status(rows, manifest)
+
+    assert status["rows"]["game_date"].dt.day.tolist() == [26, 24]
+    assert status["rowCount"] == 2
+    assert status["days"] == 30
+    assert status["dateAndRowThresholdsMet"] is False
+
+
+def test_prospective_metric_gate_includes_family_and_distribution_tolerance() -> None:
+    manifest = load_prospective_manifest(
+        Path("config/v7-prospective.json")
+    )
+    policy = manifest["metricPolicy"]
+    reference = {
+        "accuracy": 0.50,
+        "familyAccuracy": 0.65,
+        "hierarchicalAccuracy": 0.575,
+        "macroF1": 0.45,
+        "zeroRecallClasses": [],
+        "actualDistribution": {"FOUR_SEAM": 1.0},
+        "maxClassShareError": 0.05,
+        "totalVariationDistance": 0.06,
+        "maxClassCalibrationError": 0.04,
+    }
+    candidate = {
+        **reference,
+        "familyAccuracy": 0.644,
+        "totalVariationDistance": 0.066,
+    }
+
+    reasons = prospective_metric_failure_reasons(
+        reference,
+        candidate,
+        {"ciLower": 0.001},
+        policy,
+    )
+
+    assert "family_accuracy_drop_gt_tolerance" in reasons
+    assert "total_variation_distance_failed" in reasons
+
+
+def test_prospective_evaluation_does_not_open_metrics_before_start(
+    tmp_path: Path,
+) -> None:
+    candidate = tmp_path / "candidate"
+    reference = tmp_path / "reference"
+    candidate.mkdir()
+    reference.mkdir()
+    registry = json.dumps({"dataCutoff": "2025-11-01"}).encode()
+    candidate_files = {
+        "global.pkl": b"global",
+        "pooled-residual.pkl": b"residual",
+        "context-gate.pkl": b"gate",
+        "registry.json": registry,
+    }
+    reference_files = {
+        "global.pkl": b"global",
+        "pooled-residual.pkl": b"v5-residual",
+        "registry.json": registry,
+    }
+    for directory, files in (
+        (candidate, candidate_files),
+        (reference, reference_files),
+    ):
+        for name, content in files.items():
+            (directory / name).write_bytes(content)
+    manifest = {
+        "prospectiveStart": "2026-07-26",
+        "candidates": [
+            {
+                "id": "v7.0",
+                "limitedScaleBoost": 1.0,
+                "promotionPriority": 1,
+            }
+        ],
+        "firstLook": {
+            "minimumDays": 30,
+            "minimumRows": 100_000,
+            "minimumIntervenedRows": 15_000,
+        },
+        "candidateModelSha256": {
+            name: hashlib.sha256(content).hexdigest()
+            for name, content in candidate_files.items()
+        },
+        "referenceModelSha256": {
+            name: hashlib.sha256(content).hexdigest()
+            for name, content in reference_files.items()
+        },
+    }
+
+    result = evaluate_frozen_holdout(
+        pd.DataFrame(
+            {"game_date": pd.to_datetime(["2026-07-25"])}
+        ),
+        candidate,
+        reference_model_directory=reference,
+        prospective_manifest=manifest,
+    )
+
+    validation = result["prospectiveValidation"]
+    assert validation["rowCount"] == 0
+    assert validation["firstLookConsumed"] is False
+    assert validation["selectedCandidateId"] is None
+    assert "metrics" not in validation["candidates"]["v7.0"]

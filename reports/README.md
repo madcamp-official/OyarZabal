@@ -14,6 +14,9 @@
 
 V7의 실제 Registry와 계층형 지표 결과는
 [V7 리포트](2026-07-27-v7-hierarchical-incremental.md)에 정리했다.
+독립 승격 절차와 현재 수집 상태는
+[V7 prospective 동결 리포트](2026-07-28-v7-prospective-freeze.md)에
+정리했다.
 
 ## 모델 진화 흐름
 

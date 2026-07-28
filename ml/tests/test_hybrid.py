@@ -347,3 +347,49 @@ def test_stale_limited_pitcher_uses_existing_decay() -> None:
 
     assert routing[0]["pitcherReliability"] == pytest.approx(0.075, abs=1e-4)
     assert routing[0]["effectiveScale"] == pytest.approx(0.0375, abs=1e-4)
+
+
+def test_limited_scale_boost_only_changes_limited_and_caps_at_half() -> None:
+    rows = pd.DataFrame(
+        {
+            "pitcher_id": [10, 20],
+            "count_support": [30, 30],
+            "stand_support": [30, 30],
+            "transition_support": [30, 30],
+            "pa_prev_pitch_1": ["FOUR_SEAM", "FOUR_SEAM"],
+        }
+    )
+    global_probabilities = np.full((2, 6), 1 / 6)
+    registry = {
+        10: RegistryEntry(
+            pitcher_id=10,
+            enabled=True,
+            specialist_weight=0,
+            model="pooled-residual.pkl",
+            status="full",
+            reliability=0.4,
+        ),
+        20: RegistryEntry(
+            pitcher_id=20,
+            enabled=True,
+            specialist_weight=0,
+            model="pooled-residual.pkl",
+            status="limited",
+            reliability=0.5,
+            scale_multiplier=1,
+        ),
+    }
+
+    _, _, routing = apply_reliability_gated_residual(
+        rows,
+        global_probabilities,
+        np.array([[0.1, -0.1, 0, 0, 0, 0]] * 2),
+        np.ones(2),
+        registry,
+        limited_scale_boost=1.5,
+    )
+
+    assert routing[0]["effectiveScale"] == pytest.approx(0.4)
+    assert routing[0]["limitedScaleBoost"] == 1
+    assert routing[1]["effectiveScale"] == pytest.approx(0.5)
+    assert routing[1]["limitedScaleBoost"] == 1.5

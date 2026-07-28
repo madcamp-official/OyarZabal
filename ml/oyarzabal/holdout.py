@@ -7,6 +7,7 @@ import hashlib
 import json
 import pickle
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -162,6 +163,142 @@ def _hash(path: Path) -> str:
     return digest.hexdigest()
 
 
+def load_prospective_manifest(path: Path) -> dict[str, object]:
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    candidates = manifest.get("candidates", [])
+    if (
+        manifest.get("schemaVersion") != 1
+        or manifest.get("singleLook") is not True
+        or manifest.get("noRetuningFromProspectiveData") is not True
+        or not candidates
+    ):
+        raise ValueError("invalid prospective manifest")
+    ids = [str(candidate["id"]) for candidate in candidates]
+    priorities = [int(candidate["promotionPriority"]) for candidate in candidates]
+    boosts = [float(candidate["limitedScaleBoost"]) for candidate in candidates]
+    if (
+        len(ids) != len(set(ids))
+        or sorted(priorities) != list(range(1, len(candidates) + 1))
+        or any(boost <= 0 for boost in boosts)
+    ):
+        raise ValueError("invalid prospective candidates")
+    return manifest
+
+
+def verify_frozen_models(
+    directory: Path,
+    expected: Mapping[str, str],
+) -> dict[str, str]:
+    actual = {
+        filename: _hash(directory / filename)
+        for filename in expected
+    }
+    mismatched = [
+        filename
+        for filename, digest in expected.items()
+        if actual[filename] != digest
+    ]
+    if mismatched:
+        raise ValueError(
+            "frozen model hash changed: " + ", ".join(sorted(mismatched))
+        )
+    return actual
+
+
+def _major_zero_recall(
+    metrics: Mapping[str, object],
+    minimum_frequency: float,
+) -> list[str]:
+    return [
+        name
+        for name in metrics["zeroRecallClasses"]
+        if metrics["actualDistribution"][name] >= minimum_frequency
+    ]
+
+
+def prospective_metric_failure_reasons(
+    reference: Mapping[str, object],
+    candidate: Mapping[str, object],
+    paired: Mapping[str, float | int],
+    policy: Mapping[str, float],
+) -> list[str]:
+    reasons = []
+    if paired["ciLower"] <= policy["logLossGainCiLowerMustExceed"]:
+        reasons.append("log_loss_gain_ci_not_positive")
+    for name, policy_name, reason in (
+        ("accuracy", "maximumAccuracyDrop", "accuracy_drop_gt_tolerance"),
+        (
+            "familyAccuracy",
+            "maximumFamilyAccuracyDrop",
+            "family_accuracy_drop_gt_tolerance",
+        ),
+        (
+            "hierarchicalAccuracy",
+            "maximumHierarchicalAccuracyDrop",
+            "hierarchical_accuracy_drop_gt_tolerance",
+        ),
+        ("macroF1", "maximumMacroF1Drop", "macro_f1_drop_gt_tolerance"),
+    ):
+        if candidate[name] < reference[name] - policy[policy_name]:
+            reasons.append(reason)
+    if _major_zero_recall(
+        candidate,
+        policy["majorClassMinimumFrequency"],
+    ):
+        reasons.append("major_zero_recall")
+    regression = policy["maximumDistributionRegression"]
+    for name, absolute_name, reason in (
+        (
+            "maxClassShareError",
+            "maximumClassShareError",
+            "class_share_error_failed",
+        ),
+        (
+            "totalVariationDistance",
+            "maximumTotalVariationDistance",
+            "total_variation_distance_failed",
+        ),
+        (
+            "maxClassCalibrationError",
+            "maximumClassCalibrationError",
+            "class_calibration_error_failed",
+        ),
+    ):
+        if (
+            candidate[name] > policy[absolute_name]
+            or candidate[name] > reference[name] + regression
+        ):
+            reasons.append(reason)
+    return reasons
+
+
+def prospective_sample_status(
+    rows: pd.DataFrame,
+    manifest: Mapping[str, object],
+) -> dict[str, object]:
+    first_look = manifest["firstLook"]
+    start = pd.Timestamp(str(manifest["prospectiveStart"]))
+    prospective = rows[rows["game_date"].dt.normalize() >= start].copy()
+    if prospective.empty:
+        days = 0
+    else:
+        days = (
+            prospective["game_date"].max().normalize()
+            - prospective["game_date"].min().normalize()
+        ).days + 1
+    return {
+        "rows": prospective,
+        "rowCount": int(len(prospective)),
+        "days": int(days),
+        "minimumDays": int(first_look["minimumDays"]),
+        "minimumRows": int(first_look["minimumRows"]),
+        "dateAndRowThresholdsMet": bool(
+            days >= first_look["minimumDays"]
+            and len(prospective) >= first_look["minimumRows"]
+        ),
+    }
+
+
 def evaluation_sample_fingerprint(rows: pd.DataFrame) -> str:
     """Identify the exact labeled rows used by a benchmark."""
     columns = [
@@ -190,7 +327,12 @@ def promotion_sample_is_prospective(rows: pd.DataFrame) -> bool:
 def _predict_models(
     rows: pd.DataFrame,
     model_directory: Path,
+    *,
+    limited_scale_boosts: Sequence[float] = (1.0,),
 ) -> dict[str, object]:
+    boosts = tuple(dict.fromkeys((1.0, *map(float, limited_scale_boosts))))
+    if any(boost <= 0 for boost in boosts):
+        raise ValueError("limited scale boosts must be positive")
     registry_path = model_directory / "registry.json"
     registry_payload = json.loads(registry_path.read_text(encoding="utf-8"))
     registry = _registry(registry_payload)
@@ -236,14 +378,26 @@ def _predict_models(
             global_probabilities,
             correction,
         )
-        final_probabilities, sources, routing = apply_reliability_gated_residual(
-            rows,
-            global_probabilities,
-            correction,
-            context_gate,
-            registry,
-            prediction_dates=[value.date() for value in rows["game_date"]],
-        )
+        candidates = {}
+        for boost in boosts:
+            probabilities, candidate_sources, candidate_routing = (
+                apply_reliability_gated_residual(
+                    rows,
+                    global_probabilities,
+                    correction,
+                    context_gate,
+                    registry,
+                    prediction_dates=[
+                        value.date() for value in rows["game_date"]
+                    ],
+                    limited_scale_boost=boost,
+                )
+            )
+            candidates[boost] = {
+                "final": probabilities,
+                "sources": candidate_sources,
+                "routing": candidate_routing,
+            }
         model_paths["gate"] = {
             "path": str(gate_path),
             "sha256": _hash(gate_path),
@@ -273,13 +427,23 @@ def _predict_models(
             )
             for entry in [registry.get(int(pitcher_id))]
         ]
+        candidates = {
+            boost: {
+                "final": final_probabilities,
+                "sources": sources,
+                "routing": routing,
+            }
+            for boost in boosts
+        }
+    base = candidates[1.0]
     return {
         "registryPayload": registry_payload,
         "registry": registry,
         "global": global_probabilities,
-        "final": final_probabilities,
-        "sources": sources,
-        "routing": routing,
+        "final": base["final"],
+        "sources": base["sources"],
+        "routing": base["routing"],
+        "candidates": candidates,
         "models": model_paths,
     }
 
@@ -339,20 +503,284 @@ def _breakdowns(
     return pitchers, months
 
 
+def _player_safety(
+    rows: pd.DataFrame,
+    reference_probabilities: np.ndarray,
+    candidate_probabilities: np.ndarray,
+    registry: Mapping[int, RegistryEntry],
+    manifest: Mapping[str, object],
+) -> dict[str, object]:
+    minimum_support = int(manifest["firstLook"]["minimumPlayerSupport"])
+    minimum_audited = int(manifest["firstLook"]["minimumAuditedPitchers"])
+    policy = manifest["metricPolicy"]
+    failures = []
+    insufficient = []
+    audited = 0
+    ids = rows["pitcher_id"].to_numpy(dtype=int)
+    for pitcher_id, entry in registry.items():
+        if not entry.enabled:
+            continue
+        positions = np.flatnonzero(ids == pitcher_id)
+        if len(positions) < minimum_support:
+            insufficient.append(
+                {
+                    "pitcherId": pitcher_id,
+                    "support": int(len(positions)),
+                }
+            )
+            continue
+        audited += 1
+        selected = rows.iloc[positions]
+        reference = _metrics(
+            selected,
+            reference_probabilities[positions],
+        )
+        candidate = _metrics(
+            selected,
+            candidate_probabilities[positions],
+        )
+        reasons = []
+        if _major_zero_recall(
+            candidate,
+            policy["majorClassMinimumFrequency"],
+        ):
+            reasons.append("major_zero_recall")
+        regression = policy["maximumDistributionRegression"]
+        for name, absolute_name, reason in (
+            (
+                "maxClassShareError",
+                "maximumClassShareError",
+                "class_share_error_failed",
+            ),
+            (
+                "totalVariationDistance",
+                "maximumTotalVariationDistance",
+                "total_variation_distance_failed",
+            ),
+            (
+                "maxClassCalibrationError",
+                "maximumClassCalibrationError",
+                "class_calibration_error_failed",
+            ),
+        ):
+            if (
+                candidate[name] > policy[absolute_name]
+                or candidate[name] > reference[name] + regression
+            ):
+                reasons.append(reason)
+        if reasons:
+            failures.append(
+                {
+                    "pitcherId": pitcher_id,
+                    "support": int(len(positions)),
+                    "failureReasons": reasons,
+                    "reference": reference,
+                    "candidate": candidate,
+                }
+            )
+    return {
+        "minimumSupport": minimum_support,
+        "auditedPitchers": audited,
+        "minimumAuditedPitchers": minimum_audited,
+        "insufficientSupport": insufficient,
+        "failures": failures,
+        "passed": bool(audited >= minimum_audited and not failures),
+    }
+
+
+def _prospective_candidate_result(
+    rows: pd.DataFrame,
+    probabilities: np.ndarray,
+    routing: list[dict[str, object]],
+    reference_probabilities: np.ndarray,
+    registry: Mapping[int, RegistryEntry],
+    comparison_mask: np.ndarray,
+    manifest: Mapping[str, object],
+) -> dict[str, object]:
+    policy = manifest["metricPolicy"]
+    samples = int(manifest["firstLook"]["bootstrapSamples"])
+    reference = _metrics(rows, reference_probabilities)
+    candidate = _metrics(rows, probabilities)
+    paired = _paired(
+        rows,
+        reference_probabilities,
+        probabilities,
+        samples=samples,
+    )
+    overall_reasons = prospective_metric_failure_reasons(
+        reference,
+        candidate,
+        paired,
+        policy,
+    )
+    comparison_rows = rows.loc[comparison_mask]
+    comparison_reference = _metrics(
+        comparison_rows,
+        reference_probabilities[comparison_mask],
+    )
+    comparison_candidate = _metrics(
+        comparison_rows,
+        probabilities[comparison_mask],
+    )
+    comparison_paired = _paired(
+        comparison_rows,
+        reference_probabilities[comparison_mask],
+        probabilities[comparison_mask],
+        samples=samples,
+    )
+    comparison_reasons = prospective_metric_failure_reasons(
+        comparison_reference,
+        comparison_candidate,
+        comparison_paired,
+        policy,
+    )
+    player_safety = _player_safety(
+        rows,
+        reference_probabilities,
+        probabilities,
+        registry,
+        manifest,
+    )
+    scale_values = np.asarray(
+        [float(value["effectiveScale"]) for value in routing]
+    )
+    intervened = int(np.count_nonzero(scale_values > 0))
+    enough_interventions = (
+        intervened >= manifest["firstLook"]["minimumIntervenedRows"]
+    )
+    return {
+        "rows": int(len(rows)),
+        "intervenedRows": intervened,
+        "minimumIntervenedRows": int(
+            manifest["firstLook"]["minimumIntervenedRows"]
+        ),
+        "enoughInterventions": bool(enough_interventions),
+        "reference": reference,
+        "candidate": candidate,
+        "pairedBootstrap": paired,
+        "overallFailureReasons": overall_reasons,
+        "overallMetricPassed": not overall_reasons,
+        "comparisonCohort": {
+            "id": COMPARISON_COHORT_ID,
+            "reference": comparison_reference,
+            "candidate": comparison_candidate,
+            "pairedBootstrap": comparison_paired,
+            "failureReasons": comparison_reasons,
+            "metricPassed": not comparison_reasons,
+        },
+        "playerSafety": player_safety,
+        "metricPassed": bool(
+            not overall_reasons
+            and not comparison_reasons
+            and player_safety["passed"]
+        ),
+        "routingDiagnostics": {
+            "effectiveScale": {
+                "p10": float(np.quantile(scale_values, 0.10)),
+                "p50": float(np.quantile(scale_values, 0.50)),
+                "p90": float(np.quantile(scale_values, 0.90)),
+                "nonZero": intervened,
+            },
+            "capReasons": dict(
+                sorted(
+                    Counter(
+                        str(value["capReason"])
+                        for value in routing
+                        if value["capReason"] is not None
+                    ).items()
+                )
+            ),
+        },
+    }
+
+
 def evaluate_frozen_holdout(
     rows: pd.DataFrame,
     model_directory: Path,
     *,
     reference_model_directory: Path | None = None,
     evaluation_start: pd.Timestamp | None = None,
+    prospective_manifest: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
-    if evaluation_start is not None:
+    available_through = rows["game_date"].max().date().isoformat()
+    manifest_hashes = None
+    sample_status = None
+    candidate_boosts = (1.0,)
+    if prospective_manifest is not None:
+        if reference_model_directory is None:
+            raise ValueError(
+                "prospective evaluation requires V5 reference models"
+            )
+        manifest_hashes = {
+            "candidate": verify_frozen_models(
+                model_directory,
+                prospective_manifest["candidateModelSha256"],
+            ),
+            "reference": verify_frozen_models(
+                reference_model_directory,
+                prospective_manifest["referenceModelSha256"],
+            ),
+        }
+        sample_status = prospective_sample_status(rows, prospective_manifest)
+        rows = sample_status.pop("rows")
+        candidate_boosts = tuple(
+            float(candidate["limitedScaleBoost"])
+            for candidate in prospective_manifest["candidates"]
+        )
+        if rows.empty:
+            registry_payload = json.loads(
+                (model_directory / "registry.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            return {
+                "schemaVersion": 6,
+                "decisionRule": "family-sum-then-child",
+                "generatedAt": datetime.now(UTC).isoformat(),
+                "trainingCutoff": str(registry_payload["dataCutoff"]),
+                "availableThrough": available_through,
+                "holdoutStart": None,
+                "holdoutEnd": None,
+                "prospectiveManifest": prospective_manifest,
+                "frozenModelSha256": manifest_hashes,
+                "prospectiveValidation": {
+                    **sample_status,
+                    "status": "collecting",
+                    "enoughData": False,
+                    "firstLookConsumed": False,
+                    "selectedCandidateId": None,
+                    "candidates": {
+                        str(candidate["id"]): {
+                            "limitedScaleBoost": float(
+                                candidate["limitedScaleBoost"]
+                            ),
+                            "promotionPriority": int(
+                                candidate["promotionPriority"]
+                            ),
+                            "intervenedRows": 0,
+                            "minimumIntervenedRows": int(
+                                prospective_manifest["firstLook"][
+                                    "minimumIntervenedRows"
+                                ]
+                            ),
+                            "enoughInterventions": False,
+                            "status": "awaiting_data",
+                        }
+                        for candidate in prospective_manifest["candidates"]
+                    },
+                },
+            }
+    elif evaluation_start is not None:
         rows = rows[
             rows["game_date"].dt.normalize() >= evaluation_start.normalize()
         ].copy()
         if rows.empty:
             raise ValueError("no holdout rows at or after evaluation start")
-    predicted = _predict_models(rows, model_directory)
+    predicted = _predict_models(
+        rows,
+        model_directory,
+        limited_scale_boosts=candidate_boosts,
+    )
     registry_payload = predicted["registryPayload"]
     registry = predicted["registry"]
     global_probabilities = predicted["global"]
@@ -367,6 +795,72 @@ def evaluate_frozen_holdout(
     reference_probabilities = (
         reference_predictions["final"] if reference_predictions else None
     )
+    if prospective_manifest is not None and sample_status is not None:
+        pending_candidates = {}
+        look_ready = bool(sample_status["dateAndRowThresholdsMet"])
+        for candidate_config in prospective_manifest["candidates"]:
+            candidate_id = str(candidate_config["id"])
+            boost = float(candidate_config["limitedScaleBoost"])
+            candidate_output = predicted["candidates"][boost]
+            intervened = int(
+                np.count_nonzero(
+                    [
+                        float(value["effectiveScale"]) > 0
+                        for value in candidate_output["routing"]
+                    ]
+                )
+            )
+            enough_interventions = (
+                intervened
+                >= prospective_manifest["firstLook"][
+                    "minimumIntervenedRows"
+                ]
+            )
+            look_ready = look_ready and enough_interventions
+            pending_candidates[candidate_id] = {
+                "limitedScaleBoost": boost,
+                "promotionPriority": int(
+                    candidate_config["promotionPriority"]
+                ),
+                "intervenedRows": intervened,
+                "minimumIntervenedRows": int(
+                    prospective_manifest["firstLook"][
+                        "minimumIntervenedRows"
+                    ]
+                ),
+                "enoughInterventions": bool(enough_interventions),
+                "status": "awaiting_first_look",
+            }
+        if not look_ready:
+            prospective_validation = {
+                **sample_status,
+                "status": "collecting",
+                "enoughData": False,
+                "firstLookConsumed": False,
+                "sampleSha256": evaluation_sample_fingerprint(rows),
+                "selectedCandidateId": None,
+                "candidates": pending_candidates,
+            }
+            return {
+                "schemaVersion": 6,
+                "decisionRule": "family-sum-then-child",
+                "generatedAt": datetime.now(UTC).isoformat(),
+                "trainingCutoff": str(
+                    predicted["registryPayload"]["dataCutoff"]
+                ),
+                "availableThrough": available_through,
+                "holdoutStart": rows["game_date"].min().date().isoformat(),
+                "holdoutEnd": rows["game_date"].max().date().isoformat(),
+                "prospectiveManifest": prospective_manifest,
+                "frozenModelSha256": manifest_hashes,
+                "models": predicted["models"],
+                "reference": {
+                    "models": reference_predictions["models"],
+                    "metrics": None,
+                },
+                "promotion": prospective_validation,
+                "prospectiveValidation": prospective_validation,
+            }
 
     pool_ids = set(registry)
     enabled_ids = {
@@ -470,7 +964,11 @@ def evaluate_frozen_holdout(
         }
     reference = None
     promotion = None
-    if reference_predictions is not None and reference_probabilities is not None:
+    if (
+        reference_predictions is not None
+        and reference_probabilities is not None
+        and prospective_manifest is None
+    ):
         promotion_probabilities = final_probabilities.copy()
         player_failures = []
         for pitcher_id, entry in registry.items():
@@ -603,8 +1101,111 @@ def evaluate_frozen_holdout(
             "promoted": bool(enough_data and metric_passed),
         }
 
+    prospective_validation = None
+    if (
+        prospective_manifest is not None
+        and reference_probabilities is not None
+        and sample_status is not None
+    ):
+        candidate_results = {}
+        look_ready = bool(sample_status["dateAndRowThresholdsMet"])
+        for candidate_config in prospective_manifest["candidates"]:
+            candidate_id = str(candidate_config["id"])
+            boost = float(candidate_config["limitedScaleBoost"])
+            candidate_output = predicted["candidates"][boost]
+            intervened = int(
+                np.count_nonzero(
+                    [
+                        float(value["effectiveScale"]) > 0
+                        for value in candidate_output["routing"]
+                    ]
+                )
+            )
+            enough_interventions = (
+                intervened
+                >= prospective_manifest["firstLook"][
+                    "minimumIntervenedRows"
+                ]
+            )
+            look_ready = look_ready and enough_interventions
+            candidate_results[candidate_id] = {
+                "limitedScaleBoost": boost,
+                "promotionPriority": int(
+                    candidate_config["promotionPriority"]
+                ),
+                "intervenedRows": intervened,
+                "minimumIntervenedRows": int(
+                    prospective_manifest["firstLook"][
+                        "minimumIntervenedRows"
+                    ]
+                ),
+                "enoughInterventions": bool(enough_interventions),
+                "status": "awaiting_first_look",
+            }
+        selected_candidate_id = None
+        if look_ready:
+            comparison_mask = masks["comparisonCohort"]
+            for candidate_config in prospective_manifest["candidates"]:
+                candidate_id = str(candidate_config["id"])
+                boost = float(candidate_config["limitedScaleBoost"])
+                candidate_output = predicted["candidates"][boost]
+                result = _prospective_candidate_result(
+                    rows,
+                    candidate_output["final"],
+                    candidate_output["routing"],
+                    reference_probabilities,
+                    registry,
+                    comparison_mask,
+                    prospective_manifest,
+                )
+                candidate_results[candidate_id] = {
+                    **candidate_results[candidate_id],
+                    **result,
+                    "status": (
+                        "passed"
+                        if result["metricPassed"]
+                        else "failed"
+                    ),
+                }
+            for candidate_config in sorted(
+                prospective_manifest["candidates"],
+                key=lambda value: int(value["promotionPriority"]),
+            ):
+                candidate_id = str(candidate_config["id"])
+                if candidate_results[candidate_id]["metricPassed"]:
+                    selected_candidate_id = candidate_id
+                    candidate_results[candidate_id]["status"] = "promoted"
+                    break
+            for _candidate_id, result in candidate_results.items():
+                if result["status"] == "passed":
+                    result["status"] = "passed_not_selected"
+        prospective_validation = {
+            **sample_status,
+            "status": (
+                "collecting"
+                if not look_ready
+                else "promote"
+                if selected_candidate_id is not None
+                else "reject"
+            ),
+            "enoughData": bool(look_ready),
+            "firstLookConsumed": bool(look_ready),
+            "sampleSha256": evaluation_sample_fingerprint(rows),
+            "selectedCandidateId": selected_candidate_id,
+            "candidates": candidate_results,
+        }
+        reference = {
+            "models": reference_predictions["models"],
+            "metrics": (
+                _metrics(rows, reference_probabilities)
+                if look_ready
+                else None
+            ),
+        }
+        promotion = prospective_validation
+
     return {
-        "schemaVersion": 5,
+        "schemaVersion": 6 if prospective_manifest is not None else 5,
         "decisionRule": "family-sum-then-child",
         "generatedAt": datetime.now(UTC).isoformat(),
         "trainingCutoff": str(registry_payload["dataCutoff"]),
@@ -620,8 +1221,11 @@ def evaluate_frozen_holdout(
             "frozenBenchmarkMatch": is_frozen_benchmark,
         },
         "models": predicted["models"],
+        "prospectiveManifest": prospective_manifest,
+        "frozenModelSha256": manifest_hashes,
         "reference": reference,
         "promotion": promotion,
+        "prospectiveValidation": prospective_validation,
         "routing": dict(sorted(Counter(sources).items())),
         "routingDiagnostics": {
             "effectiveScale": {
@@ -649,14 +1253,41 @@ def main() -> None:
     parser.add_argument("--models", type=Path, default=Path("models/v7"))
     parser.add_argument("--reference-models", type=Path)
     parser.add_argument("--start", type=pd.Timestamp)
+    parser.add_argument("--prospective-manifest", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
+    manifest = (
+        load_prospective_manifest(args.prospective_manifest)
+        if args.prospective_manifest
+        else None
+    )
+    if manifest is not None and (
+        args.reference_models is None
+        or args.output is None
+        or args.start is not None
+    ):
+        parser.error(
+            "--prospective-manifest requires --reference-models and "
+            "--output, and fixes the start date itself"
+        )
+    if manifest is not None and args.output and args.output.exists():
+        previous = json.loads(args.output.read_text(encoding="utf-8"))
+        consumed = previous.get("prospectiveValidation", {}).get(
+            "firstLookConsumed",
+            False,
+        )
+        if consumed:
+            raise SystemExit(
+                "prospective first look was already consumed; "
+                "do not overwrite the frozen result"
+            )
     result = evaluate_frozen_holdout(
         frozen_rows(args.history, args.holdout),
         args.models,
         reference_model_directory=args.reference_models,
         evaluation_start=args.start,
+        prospective_manifest=manifest,
     )
     text = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
     if args.output:

@@ -251,3 +251,19 @@ Git revision:
   3.26%p, 5.21%p, 4.24%p 높다.
 - 산출물은 Registry schema v7, Holdout schema v5, Replay schema v8로
   올리고 `decisionRule=family-sum-then-child`를 기록했다.
+
+## 2026-07-28 — V7 prospective 독립 검증 동결
+
+- V7 구조를 유지한 채 `V7.0 limitedBoost=1.0`과
+  `V7.1 limitedBoost=1.5`를 동결했다. boost는 limited 선수에만 적용되고
+  기존 reliability 상한 0.5, Context Gate, hard safety, JS·확률 변화 cap은
+  그대로 유지된다.
+- 후보와 V5 reference의 model hash, 후보 순서, 표본 조건, metric gate를
+  `config/v7-prospective.json`에 기록했다.
+- 첫 look 전에는 성능 지표를 계산하지 않는다. 최소 30일·100,000구·후보별
+  개입 15,000구를 모두 채운 뒤 단 한 번 V5와 비교하며, 결과를 본 뒤
+  재튜닝하지 않는다.
+- 현재 로컬 2026 holdout은 2026-07-25까지라 prospective 표본은 0구다.
+  두 후보 모두 `awaiting_data`, V7 전체는 `shadow`를 유지한다.
+- limited roster는 2024·2025에서 후향 선택됐으며, 독립 검증은 이 cohort를
+  고정한 채 앞으로 들어오는 투구만 평가한다.

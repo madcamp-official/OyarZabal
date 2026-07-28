@@ -107,3 +107,20 @@ shadow를 유지한다.
 게이트는 달라진다. 따라서 기존 Registry를 재사용하지 않고 2024·2025 OOF로
 full/limited/shadow를 다시 판정하며, 공개 2026과 쇼케이스 리포트도 전부
 새 decoder로 재계산한다.
+
+## 2026-07-28 — V7 독립 검증 후보와 단일 look을 동결
+
+V7 구조와 Registry는 바꾸지 않는다. 현재 limited 배율 1.0을 `V7.0`, limited
+배율만 1.5로 높인 모델을 `V7.1`로 고정하고, 같은 2026-07-26 이후 투구에서
+동시에 shadow 평가한다. full과 shadow 선수의 배율은 두 후보에서 같다.
+
+최초 평가는 최소 30일·100,000구·후보별 residual 개입 15,000구가 모두
+충족될 때 한 번만 연다. 이미 공개된 2026-03-25~07-25는 후보 선택과 승격에
+사용하지 않는다. V7.1을 먼저 심사하고 실패하면 V7.0을 심사하며, prospective
+결과를 본 뒤 후보·임계값·순서를 바꾸지 않는다.
+
+승격에는 V5 대비 경기 단위 paired bootstrap Log Loss 개선 CI 하한 양수,
+Exact·Family·Hierarchical·Macro F1 하락 0.5%p 이내, 주요 구종 zero recall
+없음을 요구한다. TVD·class share·calibration과 선수별 쏠림도 사전에 동결한
+절대 한도 및 V5 대비 0.5%p 악화 허용치로 검사한다. 현재 limited roster는
+2024·2025 후향 데이터로 선택됐음을 모든 독립 검증 리포트에 명시한다.

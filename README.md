@@ -44,7 +44,8 @@ uv run oyarzabal-evaluate-holdout \
 uv run oyarzabal-evaluate-holdout \
   --models models/v7 \
   --reference-models models/hybrid \
-  --start 2026-07-26
+  --prospective-manifest config/v7-prospective.json \
+  --output artifacts/prospective/v7-first-look.json
 uv run oyarzabal-build-demo \
   --history data/raw/statcast \
   --game /path/to/game.parquet \
@@ -62,6 +63,9 @@ registry에서 2026 데이터가 감지되면 중단합니다.
 정확한 투구가 달라지면 row fingerprint 검사에서 평가가 중단됩니다.
 V7 Registry는 선수를 `full / limited / shadow`로 나누며, prospective 승격
 전까지 제품 배포 상태는 shadow입니다.
+독립 검증에서는 현재 배율 `1.0`과 제한 선수 배율만 `1.5`로 높인 후보를
+동시에 동결합니다. 2026-07-26 이후 최소 30일·100,000구·후보별 개입
+15,000구가 모이기 전에는 성능 지표를 열지 않습니다.
 
 ## Codex Worktree
 
