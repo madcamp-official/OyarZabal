@@ -13,7 +13,10 @@ def test_static_replay_uses_hierarchical_decoder_and_preserves_pitch_order() -> 
 
     assert manifest["schemaVersion"] == 8
     assert manifest["decisionRule"] == "family-sum-then-child"
-    assert manifest["deploymentStatus"] == "shadow"
+    assert manifest["deploymentStatus"] == "active"
+    assert manifest["deploymentBasis"] == "taxonomy-product-generation"
+    assert manifest["performanceCertification"] == "prospective-pending"
+    assert manifest["models"]["final"].endswith("(Current)")
     assert tuple(manifest["pitchGroups"]) == tuple(str(group) for group in PITCH_GROUPS)
     assert tuple(manifest["pitchFamilies"]) == tuple(
         str(family) for family in PITCH_FAMILIES

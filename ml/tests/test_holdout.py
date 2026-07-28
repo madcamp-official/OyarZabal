@@ -179,6 +179,9 @@ def test_v7_prospective_manifest_freezes_candidates_and_policy() -> None:
         Path("config/v7-prospective.json")
     )
 
+    assert manifest["deploymentStatus"] == "active"
+    assert manifest["deploymentBasis"] == "taxonomy-product-generation"
+    assert manifest["evaluationPurpose"] == "post-deployment-performance-certification"
     assert manifest["prospectiveStart"] == "2026-07-26"
     assert [
         (candidate["id"], candidate["limitedScaleBoost"])

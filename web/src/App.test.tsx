@@ -22,6 +22,8 @@ const manifest = {
   caveat: "showcase",
   finalModel: "xgboost",
   deploymentStatus: "shadow",
+  deploymentBasis: "candidate-evaluation",
+  performanceCertification: "not-applicable",
   pitchGroups: {
     FOUR_SEAM: "포심",
     MOVING_FASTBALL: "무빙 패스트볼",

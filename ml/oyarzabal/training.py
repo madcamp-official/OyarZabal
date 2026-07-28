@@ -1434,7 +1434,17 @@ def train_hybrid(
     result = {
         "schemaVersion": 7,
         "modelVersion": "V7.2" if tuning_manifest is not None else "V7",
-        "deploymentStatus": "shadow",
+        "deploymentStatus": "active" if tuning_manifest is not None else "shadow",
+        "deploymentBasis": (
+            "taxonomy-product-generation"
+            if tuning_manifest is not None
+            else "candidate-evaluation"
+        ),
+        "performanceCertification": (
+            "prospective-pending"
+            if tuning_manifest is not None
+            else "not-applicable"
+        ),
         "decisionRule": "family-sum-then-child",
         "pitchGroups": [str(group) for group in PITCH_GROUPS],
         "pitchFamilies": family_names(),

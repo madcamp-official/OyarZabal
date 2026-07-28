@@ -299,3 +299,13 @@ Git revision:
 - 현재 가용 범위는 7월 26일까지이며 prospective 유효 표본은 4,514구,
   Residual 개입은 600구다.
 - 최소 임계값 전이라 성능은 공개하지 않았고 `firstLookConsumed=false`다.
+
+## 2026-07-28 — V7.2 taxonomy 세대교체
+
+- 사용자 결정에 따라 V7.2를 현재 taxonomy·제품 구조의 기본 모델로
+  `active` 지정했다.
+- 승격 근거는 V5 대비 통계적 우위가 아니라 6종→3계열 계층 decoder,
+  `full / limited / shadow` Registry, 현재 UI·산출물 계약의 일관성이다.
+- V5 모델과 과거 지표는 legacy benchmark로 보존한다.
+- prospective 평가는 계속 blinded 상태로 수집하며 배포 게이트가 아닌
+  사후 성능 인증으로 해석한다.
