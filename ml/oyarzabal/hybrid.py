@@ -436,12 +436,14 @@ def apply_reliability_gated_residual(
     registry: Mapping[int, RegistryEntry],
     *,
     prediction_dates: Sequence[date] | None = None,
+    full_tier_boost: float = 1.0,
     limited_scale_boost: float = 1.0,
     reliability_scale_boost: float = 1.0,
     context_gate_power: float = 1.0,
 ) -> tuple[np.ndarray, list[str], list[dict[str, object]]]:
     if (
-        limited_scale_boost <= 0
+        full_tier_boost <= 0
+        or limited_scale_boost <= 0
         or reliability_scale_boost <= 0
         or context_gate_power <= 0
     ):
@@ -499,11 +501,17 @@ def apply_reliability_gated_residual(
                 adjusted_gate,
                 hard_safety_pass=bool(safety[int(position)]),
             ) * entry.scale_multiplier
-            if entry.status == "limited":
-                requested[int(position)] = min(
-                    requested[int(position)] * limited_scale_boost,
-                    0.5,
-                )
+            tier_boost = (
+                full_tier_boost
+                if entry.status == "full"
+                else limited_scale_boost
+                if entry.status == "limited"
+                else 1.0
+            )
+            requested[int(position)] = min(
+                requested[int(position)] * tier_boost,
+                0.5,
+            )
             if requested[int(position)] > 0:
                 sources[int(position)] = "reliability-gated-residual"
 
@@ -538,6 +546,8 @@ def apply_reliability_gated_residual(
                 and registry[int(pitcher_id)].status == "limited"
                 else 1.0
             ),
+            "fullTierBoost": float(full_tier_boost),
+            "limitedTierBoost": float(limited_scale_boost),
             "reliabilityScaleBoost": float(reliability_scale_boost),
             "contextGatePower": float(context_gate_power),
             "capReason": cap_reason,
