@@ -436,7 +436,10 @@ def apply_reliability_gated_residual(
     registry: Mapping[int, RegistryEntry],
     *,
     prediction_dates: Sequence[date] | None = None,
+    limited_scale_boost: float = 1.0,
 ) -> tuple[np.ndarray, list[str], list[dict[str, object]]]:
+    if limited_scale_boost <= 0:
+        raise ValueError("limited scale boost must be positive")
     global_values = validate_probability_matrix(global_probabilities)
     residual_values = np.asarray(correction, dtype=float)
     gate_values = np.asarray(context_gate, dtype=float)
@@ -483,6 +486,11 @@ def apply_reliability_gated_residual(
                 float(gate_values[int(position)]),
                 hard_safety_pass=bool(safety[int(position)]),
             ) * entry.scale_multiplier
+            if entry.status == "limited":
+                requested[int(position)] = min(
+                    requested[int(position)] * limited_scale_boost,
+                    0.5,
+                )
             if requested[int(position)] > 0:
                 sources[int(position)] = "reliability-gated-residual"
 
@@ -505,6 +513,12 @@ def apply_reliability_gated_residual(
                 float(registry[int(pitcher_id)].scale_multiplier)
                 if int(pitcher_id) in registry
                 else 0.0
+            ),
+            "limitedScaleBoost": (
+                float(limited_scale_boost)
+                if registry.get(int(pitcher_id)) is not None
+                and registry[int(pitcher_id)].status == "limited"
+                else 1.0
             ),
             "capReason": cap_reason,
             "hardGateReason": hard_reason,

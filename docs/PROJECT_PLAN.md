@@ -79,13 +79,27 @@ effective scale =
 - 2026-07-26 이후 데이터만 지정해 최소 30일·전체 100,000구·V7 개입
   15,000구를 채운 첫 look에서 V5와 paired game bootstrap으로 승격을
   판단한다. 그전 `deploymentStatus`는 `shadow`다.
+- `V7.0`은 limited 배율 1.0, `V7.1`은 limited 배율 1.5로 동결한다.
+  2024·2025 결과로 선택한 우선순위에 따라 V7.1을 먼저 심사하고, 실패하면
+  V7.0을 심사한다. prospective 결과를 보고 배율·순서·조건을 다시 조정하지
+  않는다.
+- 첫 look은 V5 대비 Log Loss 개선의 경기 단위 bootstrap 95% CI 하한이
+  0보다 커야 한다. Exact·Family·Hierarchical·Macro F1 하락은 각각
+  0.5%p 이내여야 하며, 주요 구종 zero recall이 없어야 한다.
+- 분포 안전 조건은 `maxClassShareError ≤ 20%p`, `TVD ≤ 20%p`,
+  `maxClassCalibrationError ≤ 10%p`와 V5 대비 악화 허용치 0.5%p로
+  사전 고정한다. 선수별 평가는 최소 300구인 선수를 대상으로 같은 조건을
+  확인한다.
+- 현재 limited roster는 2024·2025 후향 데이터로 선택된 cohort다. 따라서
+  roster 자체의 품질 주장은 prospective 첫 look이 통과해야만 가능하다.
 
 ## 산출물
 
 - Registry schema v7: 판정 규칙, tier, multiplier, 연도별 안전 배율, reliability,
   증분 지표와 실패 사유
-- Holdout schema v5: Exact·Family·Hierarchical, 전체·고정 cohort·tier·선수·
-  월별 지표와 bootstrap CI
+- Holdout schema v6: 동결 manifest와 model hash, 단일 look 진행 상태,
+  Exact·Family·Hierarchical, 전체·고정 cohort·tier·선수·월별 지표와
+  bootstrap CI
 - Replay schema v8: 계열 매핑, 세 지표, tier, multiplier, effective scale과
   cap/fallback 사유
 - UI: 3개 부모 계열 아래 6개 확률 막대, 세부 Top-1 배지, 공개 후
