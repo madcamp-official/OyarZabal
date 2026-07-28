@@ -339,3 +339,19 @@ Git revision:
   42,518구였다. 고정 30명 cohort에는 full tier 투구가 없어 V7.3과 결과가
   동일했다.
 - V7.4는 공개 표본 stress test로만 보존하고 V7.2의 active 상태는 유지한다.
+
+## 2026-07-28 — V7.5 extreme Residual stress test
+
+- full·limited tier boost를 6.372873, scale cap을 4, JS·클래스 확률 변화
+  cap을 각각 1로 설정했다. 두 확률 cap은 사실상 비활성화됐다.
+- non-zero scale 평균은 V7.4 0.335에서 V7.5 1.000, p90은
+  0.5에서 2.469로 증가했다. cap 발동은 0건이었다.
+- 공개 2026 전체에서 V7.5는 V7.4 대비 Family +0.007%p와 TVD
+  −0.48%p를 기록했지만 Exact −0.045%p, Macro F1 −0.30%p,
+  Log Loss +0.00143으로 악화됐다. Global보다도 Log Loss가 나빴다.
+- full 3명은 Global 대비 Exact +0.99%p, Macro F1 +0.91%p,
+  Log Loss −0.01086, TVD −10.31%p로 개선됐다.
+- limited 42명은 Family +1.18%p에도 Macro F1 −3.62%p,
+  Log Loss +0.00389, TVD +8.00%p로 과보정됐다.
+- V7.5 전체 설정은 기각한다. 큰 scale의 가능성은 full tier에만 남기고,
+  active V7.2는 유지한다.

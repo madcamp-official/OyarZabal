@@ -636,6 +636,7 @@ def apply_dynamic_correction(
     correction: np.ndarray,
     scales: np.ndarray,
     *,
+    scale_cap: float = 0.5,
     js_cap: float = 0.05,
     probability_shift_cap: float = 0.20,
     iterations: int = 24,
@@ -651,10 +652,15 @@ def apply_dynamic_correction(
         not np.isfinite(residual_values).all()
         or not np.isfinite(requested).all()
         or (requested < 0).any()
-        or (requested > 0.5).any()
+        or (requested > scale_cap).any()
     ):
         raise ValueError("dynamic correction inputs are invalid")
-    if js_cap <= 0 or probability_shift_cap <= 0 or iterations <= 0:
+    if (
+        scale_cap <= 0
+        or js_cap <= 0
+        or probability_shift_cap <= 0
+        or iterations <= 0
+    ):
         raise ValueError("dynamic correction caps must be positive")
 
     def probabilities(values: np.ndarray) -> np.ndarray:

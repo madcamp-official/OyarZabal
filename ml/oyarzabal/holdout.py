@@ -347,6 +347,19 @@ def _predict_models(
     context_gate_power = float(
         residual_config.get("contextGatePower", 1.0)
     )
+    scale_cap = float(residual_config.get("scaleCap", 0.5))
+    js_divergence_cap = float(
+        residual_config.get(
+            "jsDivergenceCap",
+            residual_config.get("jsCap", 0.05),
+        )
+    )
+    class_probability_shift_cap = float(
+        residual_config.get(
+            "classProbabilityShiftCap",
+            residual_config.get("probabilityShiftCap", 0.20),
+        )
+    )
     boosts = tuple(
         dict.fromkeys(
             (default_limited_boost, *map(float, limited_scale_boosts))
@@ -412,6 +425,11 @@ def _predict_models(
                     limited_scale_boost=boost,
                     reliability_scale_boost=reliability_scale_boost,
                     context_gate_power=context_gate_power,
+                    scale_cap=scale_cap,
+                    js_divergence_cap=js_divergence_cap,
+                    class_probability_shift_cap=(
+                        class_probability_shift_cap
+                    ),
                 )
             )
             candidates[boost] = {

@@ -440,12 +440,18 @@ def apply_reliability_gated_residual(
     limited_scale_boost: float = 1.0,
     reliability_scale_boost: float = 1.0,
     context_gate_power: float = 1.0,
+    scale_cap: float = 0.5,
+    js_divergence_cap: float = 0.05,
+    class_probability_shift_cap: float = 0.20,
 ) -> tuple[np.ndarray, list[str], list[dict[str, object]]]:
     if (
         full_tier_boost <= 0
         or limited_scale_boost <= 0
         or reliability_scale_boost <= 0
         or context_gate_power <= 0
+        or scale_cap <= 0
+        or js_divergence_cap <= 0
+        or class_probability_shift_cap <= 0
     ):
         raise ValueError("residual scale controls must be positive")
     global_values = validate_probability_matrix(global_probabilities)
@@ -510,7 +516,7 @@ def apply_reliability_gated_residual(
             )
             requested[int(position)] = min(
                 requested[int(position)] * tier_boost,
-                0.5,
+                scale_cap,
             )
             if requested[int(position)] > 0:
                 sources[int(position)] = "reliability-gated-residual"
@@ -519,6 +525,9 @@ def apply_reliability_gated_residual(
         global_values,
         residual_values,
         requested,
+        scale_cap=scale_cap,
+        js_cap=js_divergence_cap,
+        probability_shift_cap=class_probability_shift_cap,
     )
     routing = [
         {
@@ -550,6 +559,11 @@ def apply_reliability_gated_residual(
             "limitedTierBoost": float(limited_scale_boost),
             "reliabilityScaleBoost": float(reliability_scale_boost),
             "contextGatePower": float(context_gate_power),
+            "scaleCap": float(scale_cap),
+            "jsDivergenceCap": float(js_divergence_cap),
+            "classProbabilityShiftCap": float(
+                class_probability_shift_cap
+            ),
             "capReason": cap_reason,
             "hardGateReason": hard_reason,
         }
