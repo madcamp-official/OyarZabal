@@ -432,3 +432,44 @@ def test_reliability_and_gate_controls_increase_scale_with_half_cap() -> None:
     assert routing[0]["adjustedPitcherReliability"] == pytest.approx(0.5)
     assert routing[0]["adjustedContextGate"] == pytest.approx(0.5)
     assert routing[0]["effectiveScale"] == pytest.approx(0.25)
+
+
+def test_extreme_caps_allow_residual_scale_above_half() -> None:
+    rows = pd.DataFrame(
+        {
+            "pitcher_id": [10],
+            "count_support": [30],
+            "stand_support": [30],
+            "transition_support": [30],
+            "pa_prev_pitch_1": ["FOUR_SEAM"],
+        }
+    )
+    registry = {
+        10: RegistryEntry(
+            pitcher_id=10,
+            enabled=True,
+            specialist_weight=0,
+            model="pooled-residual.pkl",
+            status="full",
+            reliability=0.5,
+        )
+    }
+
+    probabilities, _, routing = apply_reliability_gated_residual(
+        rows,
+        np.full((1, 6), 1 / 6),
+        np.array([[0.1, -0.1, 0, 0, 0, 0]]),
+        np.ones(1),
+        registry,
+        full_tier_boost=6.372873,
+        reliability_scale_boost=1.5,
+        context_gate_power=0.5,
+        scale_cap=4,
+        js_divergence_cap=1,
+        class_probability_shift_cap=1,
+    )
+
+    assert routing[0]["effectiveScale"] == pytest.approx(3.1864365)
+    assert routing[0]["capReason"] is None
+    assert routing[0]["scaleCap"] == 4
+    assert probabilities.sum() == pytest.approx(1)

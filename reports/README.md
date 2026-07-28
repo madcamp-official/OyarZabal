@@ -22,6 +22,8 @@ V7의 실제 Registry와 계층형 지표 결과는
 full·limited 배율만 3배·4배로 높인 공개 2026 진단 결과다.
 [V7.4 동일 tier scale 실험](2026-07-28-v7.4-equal-tier-scale-test.md)은
 full 배율도 4로 맞춘 추가 stress test다.
+[V7.5 극단적 Residual 실험](2026-07-28-v7.5-extreme-residual-test.md)은
+scale과 확률 안전 cap을 크게 열어 tier별 한계를 확인한다.
 
 ## 모델 진화 흐름
 
@@ -37,7 +39,8 @@ flowchart TD
     V72["V7.2 · reliability/Gate 확대<br/>full 3 · limited 42 · shadow 53"]
     V73["V7.3 · tier scale stress test<br/>full ×3 · limited ×4"]
     V74["V7.4 · equal tier scale<br/>full ×4 · limited ×4"]
-    V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7 --> V72 --> V73 --> V74
+    V75["V7.5 · extreme residual<br/>full/limited ×6.372873 · cap 4"]
+    V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7 --> V72 --> V73 --> V74 --> V75
 ```
 
 ## 버전 요약
@@ -54,6 +57,7 @@ flowchart TD
 | [V7.2](2026-07-28-v7.2-residual-tuning.md) | reliability/Gate 확대 + 공통 안전 배율 | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.68% | 39.23% → **39.82%** | **1.2422** → 1.2508 | 현재 taxonomy 기본 모델 · Active |
 | [V7.3](2026-07-28-v7.3-tier-scale-test.md) | full ×3 + limited ×4 | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.88% | 39.23% → **39.49%** | **1.2422** → 1.2460 | 공개 표본 stress test |
 | [V7.4](2026-07-28-v7.4-equal-tier-scale-test.md) | full ×4 + limited ×4 | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.88% | 39.23% → **39.49%** | **1.2422** → 1.2460 | full 증분 stress test |
+| [V7.5](2026-07-28-v7.5-extreme-residual-test.md) | 극단적 scale + cap 해제 | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.42% | **39.23%** → 35.16% | **1.2422** → 1.2536 | limited 과보정 · 기각 |
 
 V1과 V2는 포심·싱커·커터·슬라이더·커브·체인지업 taxonomy다. V3 이후는
 포심·무빙 패스트볼·슬라이더 계열·커브 계열·체인지업·스플리터/포크
