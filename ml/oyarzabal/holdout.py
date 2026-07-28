@@ -335,8 +335,12 @@ def _predict_models(
     registry = _registry(registry_payload)
     residual_config = registry_payload.get("residual", {})
     default_limited_boost = float(
-        residual_config.get("limitedScaleBoost", 1.0)
+        residual_config.get(
+            "limitedTierBoost",
+            residual_config.get("limitedScaleBoost", 1.0),
+        )
     )
+    full_tier_boost = float(residual_config.get("fullTierBoost", 1.0))
     reliability_scale_boost = float(
         residual_config.get("reliabilityScaleBoost", 1.0)
     )
@@ -404,6 +408,7 @@ def _predict_models(
                     prediction_dates=[
                         value.date() for value in rows["game_date"]
                     ],
+                    full_tier_boost=full_tier_boost,
                     limited_scale_boost=boost,
                     reliability_scale_boost=reliability_scale_boost,
                     context_gate_power=context_gate_power,

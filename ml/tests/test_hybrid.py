@@ -349,7 +349,7 @@ def test_stale_limited_pitcher_uses_existing_decay() -> None:
     assert routing[0]["effectiveScale"] == pytest.approx(0.0375, abs=1e-4)
 
 
-def test_limited_scale_boost_only_changes_limited_and_caps_at_half() -> None:
+def test_tier_boosts_change_matching_tiers_and_cap_at_half() -> None:
     rows = pd.DataFrame(
         {
             "pitcher_id": [10, 20],
@@ -386,13 +386,16 @@ def test_limited_scale_boost_only_changes_limited_and_caps_at_half() -> None:
         np.array([[0.1, -0.1, 0, 0, 0, 0]] * 2),
         np.ones(2),
         registry,
-        limited_scale_boost=1.5,
+        full_tier_boost=3,
+        limited_scale_boost=4,
     )
 
-    assert routing[0]["effectiveScale"] == pytest.approx(0.4)
+    assert routing[0]["effectiveScale"] == pytest.approx(0.5)
     assert routing[0]["limitedScaleBoost"] == 1
+    assert routing[0]["fullTierBoost"] == 3
     assert routing[1]["effectiveScale"] == pytest.approx(0.5)
-    assert routing[1]["limitedScaleBoost"] == 1.5
+    assert routing[1]["limitedScaleBoost"] == 4
+    assert routing[1]["limitedTierBoost"] == 4
 
 
 def test_reliability_and_gate_controls_increase_scale_with_half_cap() -> None:

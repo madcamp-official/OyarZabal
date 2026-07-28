@@ -18,6 +18,8 @@ V7의 실제 Registry와 계층형 지표 결과는
 정리했다.
 [V7.2 Residual 튜닝 리포트](2026-07-28-v7.2-residual-tuning.md)는
 누수 없는 OOF 탐색, 선수별 안전성, 공개 2026 회귀 진단을 함께 기록한다.
+[V7.3 tier scale 실험](2026-07-28-v7.3-tier-scale-test.md)은 같은 모델에서
+full·limited 배율만 3배·4배로 높인 공개 2026 진단 결과다.
 
 ## 모델 진화 흐름
 
@@ -31,7 +33,8 @@ flowchart TD
     V6["V6 · Reliability Gate<br/>고정 cohort에서 V5 열세 · shadow"]
     V7["V7 · 계층 decoder + 증분 Registry<br/>full 4 · limited 43 · shadow 51"]
     V72["V7.2 · reliability/Gate 확대<br/>full 3 · limited 42 · shadow 53"]
-    V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7 --> V72
+    V73["V7.3 · tier scale stress test<br/>full ×3 · limited ×4"]
+    V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7 --> V72 --> V73
 ```
 
 ## 버전 요약
@@ -46,6 +49,7 @@ flowchart TD
 | [V6](2026-07-27-v6-reliability-gate.md) | Calibration + reliability gate | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.99% | 39.23% → **39.31%** | **1.2422** → 1.2475 | 새 decoder 재평가 · Shadow |
 | [V7](2026-07-27-v7-hierarchical-incremental.md) | 계층 decoder + 증분 Registry | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.53% | 39.23% → **39.77%** | **1.2422** → 1.2515 | Registry 재판정 · Shadow |
 | [V7.2](2026-07-28-v7.2-residual-tuning.md) | reliability/Gate 확대 + 공통 안전 배율 | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.68% | 39.23% → **39.82%** | **1.2422** → 1.2508 | 현재 taxonomy 기본 모델 · Active |
+| [V7.3](2026-07-28-v7.3-tier-scale-test.md) | full ×3 + limited ×4 | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.88% | 39.23% → **39.49%** | **1.2422** → 1.2460 | 공개 표본 stress test |
 
 V1과 V2는 포심·싱커·커터·슬라이더·커브·체인지업 taxonomy다. V3 이후는
 포심·무빙 패스트볼·슬라이더 계열·커브 계열·체인지업·스플리터/포크

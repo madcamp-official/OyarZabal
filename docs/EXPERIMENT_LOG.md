@@ -309,3 +309,20 @@ Git revision:
 - V5 모델과 과거 지표는 legacy benchmark로 보존한다.
 - prospective 평가는 계속 blinded 상태로 수집하며 배포 게이트가 아닌
   사후 성능 인증으로 해석한다.
+
+## 2026-07-28 — V7.3 tier scale stress test
+
+- V7.2 모델과 Registry를 유지하고 `fullTierBoost=3`,
+  `limitedTierBoost=4`만 적용했다. reliability boost 1.5, Gate power 0.5,
+  scale 상한 0.5, JS 0.05와 클래스 확률 변화 20%p cap은 유지했다.
+- 공개 2026 고정 459,530구에서 V7.3은 Global 대비 Exact +0.071%p,
+  Family +0.099%p, Hierarchical +0.085%p, Log Loss −0.00119였다.
+  V7.2 대비로도 세 정확도와 Log Loss가 모두 개선됐다.
+- 고정 30명에서는 Global 대비 Exact +0.68%p, Family +0.89%p,
+  Hierarchical +0.78%p, Log Loss −0.00999였지만 Macro F1은 −0.35%p,
+  TVD는 +3.29%p였다. V5 Log Loss보다도 0.00381 나빴다.
+- non-zero scale 평균은 0.157→0.332, 중앙값은 0.099→0.397, p90은
+  0.387→0.5로 증가했다. 개입 투구는 같은 42,518구였다.
+- full tier는 Log Loss와 Macro F1·TVD가 함께 개선됐지만 limited tier는
+  Log Loss 개선과 함께 TVD가 1.44%p 악화됐다. V7.3은 공개 표본 진단
+  실험으로만 기록하고 V7.2의 active 상태는 바꾸지 않는다.
