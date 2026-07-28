@@ -480,6 +480,26 @@ def _paired(
     )
 
 
+def _scale_summary(values: np.ndarray) -> dict[str, float | int | None]:
+    scales = np.asarray(values, dtype=float)
+    non_zero = scales[scales > 0]
+    return {
+        "p10": float(np.quantile(scales, 0.10)),
+        "p50": float(np.quantile(scales, 0.50)),
+        "p90": float(np.quantile(scales, 0.90)),
+        "nonZero": int(len(non_zero)),
+        "nonZeroMean": (
+            float(np.mean(non_zero)) if len(non_zero) else None
+        ),
+        "nonZeroP50": (
+            float(np.quantile(non_zero, 0.50)) if len(non_zero) else None
+        ),
+        "nonZeroP90": (
+            float(np.quantile(non_zero, 0.90)) if len(non_zero) else None
+        ),
+    }
+
+
 def _breakdowns(
     rows: pd.DataFrame,
     global_probabilities: np.ndarray,
@@ -691,12 +711,7 @@ def _prospective_candidate_result(
             and player_safety["passed"]
         ),
         "routingDiagnostics": {
-            "effectiveScale": {
-                "p10": float(np.quantile(scale_values, 0.10)),
-                "p50": float(np.quantile(scale_values, 0.50)),
-                "p90": float(np.quantile(scale_values, 0.90)),
-                "nonZero": intervened,
-            },
+            "effectiveScale": _scale_summary(scale_values),
             "capReasons": dict(
                 sorted(
                     Counter(
@@ -1244,12 +1259,7 @@ def evaluate_frozen_holdout(
         "prospectiveValidation": prospective_validation,
         "routing": dict(sorted(Counter(sources).items())),
         "routingDiagnostics": {
-            "effectiveScale": {
-                "p10": float(np.quantile(scale_values, 0.10)),
-                "p50": float(np.quantile(scale_values, 0.50)),
-                "p90": float(np.quantile(scale_values, 0.90)),
-                "nonZero": int(np.count_nonzero(scale_values > 0)),
-            },
+            "effectiveScale": _scale_summary(scale_values),
             "capReasons": dict(sorted(cap_counts.items())),
             "hardGateReasons": dict(sorted(hard_counts.items())),
         },
@@ -1266,7 +1276,7 @@ def main() -> None:
     parser.add_argument(
         "--holdout", type=Path, default=Path("data/holdout/statcast-2026")
     )
-    parser.add_argument("--models", type=Path, default=Path("models/v7"))
+    parser.add_argument("--models", type=Path, default=Path("models/v7.2"))
     parser.add_argument("--reference-models", type=Path)
     parser.add_argument("--start", type=pd.Timestamp)
     parser.add_argument("--prospective-manifest", type=Path)

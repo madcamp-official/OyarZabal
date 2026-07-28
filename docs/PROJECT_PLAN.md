@@ -1,10 +1,10 @@
-# OyarZabal V7 계획
+# OyarZabal V7.2 계획
 
 ## 목표
 
 완료된 MLB 경기를 한 구씩 재생하며 다음 구종의 6개 확률과 3개 계열 확률을
 함께 보여준다. 개인화는 Global보다 안전하게 나아지는 선수에게만 적용하고,
-2026-07-26 이후 prospective 평가 전까지 V7 전체 배포 상태는 shadow로 둔다.
+2026-07-26 이후 prospective 평가 전까지 V7.2 전체 배포 상태는 shadow로 둔다.
 
 ## 계층형 구종
 
@@ -46,7 +46,10 @@ reliability =
   0.5 × n/(n+1000) × min(전체 bootstrap 개선 확률, 최근 90일 개선 확률)
 
 effective scale =
-  hard safety × reliability × context Gate × Registry multiplier
+  hard safety
+  × min(0.5, 1.5 × reliability)
+  × sqrt(context Gate)
+  × Registry multiplier
 ```
 
 - Context Gate는 residual이 Global보다 정답 log probability를 높일 가능성을
@@ -79,10 +82,14 @@ effective scale =
 - 2026-07-26 이후 데이터만 지정해 최소 30일·전체 100,000구·V7 개입
   15,000구를 채운 첫 look에서 V5와 paired game bootstrap으로 승격을
   판단한다. 그전 `deploymentStatus`는 `shadow`다.
-- `V7.0`은 limited 배율 1.0, `V7.1`은 limited 배율 1.5로 동결한다.
-  2024·2025 결과로 선택한 우선순위에 따라 V7.1을 먼저 심사하고, 실패하면
-  V7.0을 심사한다. prospective 결과를 보고 배율·순서·조건을 다시 조정하지
-  않는다.
+- 2024 OOF 선택과 2025 OOF 확인으로 reliability boost 1.5와 Context Gate
+  power 0.5를 선택했다. limited 추가 boost는 선수별 안전 조건 때문에
+  1.0으로 유지한다.
+- Registry는 각 연도 최대 배율의 최솟값이 아니라 2024·2025에서 동시에
+  안전한 5% 단위 배율의 교집합을 사용한다.
+- 최종 prospective 후보는 `V7.2 reliability=1.5, gatePower=0.5,
+  limitedBoost=1.0` 하나로 동결한다. prospective 결과를 보고 설정이나
+  조건을 다시 조정하지 않는다.
 - 첫 look은 V5 대비 Log Loss 개선의 경기 단위 bootstrap 95% CI 하한이
   0보다 커야 한다. Exact·Family·Hierarchical·Macro F1 하락은 각각
   0.5%p 이내여야 하며, 주요 구종 zero recall이 없어야 한다.

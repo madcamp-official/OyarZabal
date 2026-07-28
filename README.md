@@ -33,19 +33,21 @@ Python 3.12와 [uv](https://docs.astral.sh/uv/)가 필요합니다.
 ```bash
 uv sync --extra dev
 uv run oyarzabal-fetch-statcast
-uv run oyarzabal-train-hybrid
+uv run oyarzabal-train-hybrid \
+  --models models/v7.2 \
+  --tuning-manifest config/v7-residual-tuning.json
 uv run oyarzabal-fetch-statcast \
   --start 2026-03-25 --end 2026-07-26 \
   --output data/holdout/statcast-2026
 uv run oyarzabal-evaluate-holdout \
-  --models models/v7 \
+  --models models/v7.2 \
   --reference-models models/hybrid
 # prospective 승격 평가는 공개된 회귀 진단 구간을 제외한다.
 uv run oyarzabal-evaluate-holdout \
-  --models models/v7 \
+  --models models/v7.2 \
   --reference-models models/hybrid \
   --prospective-manifest config/v7-prospective.json \
-  --output artifacts/prospective/v7-first-look.json
+  --output artifacts/prospective/v7.2-first-look.json
 uv run oyarzabal-build-demo \
   --history data/raw/statcast \
   --game /path/to/game.parquet \
@@ -54,17 +56,17 @@ uv run pytest -q
 ```
 
 수집은 `data/raw/statcast`의 월별 Parquet로 재개할 수 있습니다. 학습 모델은
-`models/v7`, 정적 JSON은 `web/public/data`, 실행 기록은
+`models/v7.2`, 정적 JSON은 `web/public/data`, 실행 기록은
 `artifacts/runs/<run-id>`에 저장합니다.
 2026 홀드아웃 평가는 2025년 말까지 학습한 모델만 허용하며, 학습 폴더나
 registry에서 2026 데이터가 감지되면 중단합니다.
 버전 간 개인화 비교는 V5 활성 선수 30명을 동결한
 `v5-enabled-pitchers-v1` cohort를 자동으로 사용합니다. 같은 benchmark의
 정확한 투구가 달라지면 row fingerprint 검사에서 평가가 중단됩니다.
-V7 Registry는 선수를 `full / limited / shadow`로 나누며, prospective 승격
+V7.2 Registry는 선수를 `full / limited / shadow`로 나누며, prospective 승격
 전까지 제품 배포 상태는 shadow입니다.
-독립 검증에서는 현재 배율 `1.0`과 제한 선수 배율만 `1.5`로 높인 후보를
-동시에 동결합니다. 2026-07-26 이후 최소 30일·100,000구·후보별 개입
+독립 검증 후보는 reliability boost `1.5`, Gate power `0.5`, limited boost
+`1.0`으로 동결했습니다. 2026-07-26 이후 최소 30일·100,000구·Residual 개입
 15,000구가 모이기 전에는 성능 지표를 열지 않습니다.
 
 ## Codex Worktree
