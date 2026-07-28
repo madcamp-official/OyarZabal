@@ -393,3 +393,39 @@ def test_limited_scale_boost_only_changes_limited_and_caps_at_half() -> None:
     assert routing[0]["limitedScaleBoost"] == 1
     assert routing[1]["effectiveScale"] == pytest.approx(0.5)
     assert routing[1]["limitedScaleBoost"] == 1.5
+
+
+def test_reliability_and_gate_controls_increase_scale_with_half_cap() -> None:
+    rows = pd.DataFrame(
+        {
+            "pitcher_id": [10],
+            "count_support": [30],
+            "stand_support": [30],
+            "transition_support": [30],
+            "pa_prev_pitch_1": ["FOUR_SEAM"],
+        }
+    )
+    registry = {
+        10: RegistryEntry(
+            pitcher_id=10,
+            enabled=True,
+            specialist_weight=0,
+            model="pooled-residual.pkl",
+            status="full",
+            reliability=0.4,
+        )
+    }
+
+    _, _, routing = apply_reliability_gated_residual(
+        rows,
+        np.full((1, 6), 1 / 6),
+        np.array([[0.1, -0.1, 0, 0, 0, 0]]),
+        np.array([0.25]),
+        registry,
+        reliability_scale_boost=1.5,
+        context_gate_power=0.5,
+    )
+
+    assert routing[0]["adjustedPitcherReliability"] == pytest.approx(0.5)
+    assert routing[0]["adjustedContextGate"] == pytest.approx(0.5)
+    assert routing[0]["effectiveScale"] == pytest.approx(0.25)

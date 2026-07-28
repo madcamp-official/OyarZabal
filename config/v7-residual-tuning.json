@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "frozenAt": "2026-07-28",
+  "dataStart": "2022-01-01",
+  "dataEnd": "2025-12-31",
+  "forbiddenProspectiveStart": "2026-07-26",
+  "selectionYear": 2024,
+  "confirmationYear": 2025,
+  "reliabilityScaleBoosts": [1.0, 1.25, 1.5],
+  "contextGatePowers": [1.0, 0.75, 0.5],
+  "limitedScaleBoosts": [1.0, 1.5, 2.0],
+  "metricPolicy": {
+    "maximumAccuracyDrop": 0.005,
+    "maximumFamilyAccuracyDrop": 0.005,
+    "maximumHierarchicalAccuracyDrop": 0.005,
+    "maximumMacroF1Drop": 0.005,
+    "majorClassMinimumFrequency": 0.05,
+    "maximumClassShareError": 0.2,
+    "maximumTotalVariationDistance": 0.2,
+    "maximumClassCalibrationError": 0.1
+  },
+  "selectionPolicy": {
+    "requireLogLossImprovementOverV7BaselineInBothYears": true,
+    "logLossTieTolerance": 0.0005,
+    "tieBreaker": [
+      "higherInterventionRate",
+      "higherMeanEffectiveScale",
+      "higherTop1ChangeRate"
+    ],
+    "fallback": "retain-v7.0"
+  },
+  "safety": {
+    "jsDivergenceCap": 0.05,
+    "classProbabilityShiftCap": 0.2,
+    "hardSafetyUnchanged": true,
+    "scaleCap": 0.5
+  },
+  "opened2026Policy": {
+    "selectionUse": false,
+    "diagnosticOnlyAfterCandidateFreeze": true
+  }
+}

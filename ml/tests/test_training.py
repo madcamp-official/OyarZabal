@@ -1,6 +1,13 @@
+from pathlib import Path
+
 import pandas as pd
 import pytest
-from oyarzabal.training import global_specs, specialist_specs, validation_folds
+from oyarzabal.training import (
+    global_specs,
+    load_residual_tuning_manifest,
+    specialist_specs,
+    validation_folds,
+)
 
 
 def test_validation_folds_are_strictly_time_ordered() -> None:
@@ -42,3 +49,17 @@ def test_global_candidate_matrix_focuses_on_weight_and_depth() -> None:
     assert {spec.max_depth for spec in specs} == {4, 6}
     assert {spec.weight_mode for spec in specs} == {"none", "light", "sqrt"}
     assert {spec.min_child_weight for spec in specs} == {8}
+
+
+def test_residual_tuning_manifest_freezes_small_temporal_grid() -> None:
+    manifest = load_residual_tuning_manifest(
+        Path("config/v7-residual-tuning.json")
+    )
+
+    assert manifest["selectionYear"] == 2024
+    assert manifest["confirmationYear"] == 2025
+    assert manifest["forbiddenProspectiveStart"] == "2026-07-26"
+    assert len(manifest["reliabilityScaleBoosts"]) == 3
+    assert len(manifest["contextGatePowers"]) == 3
+    assert len(manifest["limitedScaleBoosts"]) == 3
+    assert manifest["opened2026Policy"]["selectionUse"] is False
