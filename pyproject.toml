@@ -31,6 +31,7 @@ dev = [
 oyarzabal-build-demo = "oyarzabal.pipeline:main"
 oyarzabal-fetch-statcast = "oyarzabal.data:main"
 oyarzabal-train-v8 = "oyarzabal.v8:main"
+oyarzabal-train-v83 = "oyarzabal.v83:main"
 oyarzabal-resource-snapshot = "oyarzabal.resources:main"
 oyarzabal-train-hybrid = "oyarzabal.training:main"
 oyarzabal-evaluate-holdout = "oyarzabal.holdout:main"

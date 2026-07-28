@@ -55,6 +55,9 @@ def test_collection_is_atomic_and_resumes_completed_months(tmp_path):
     assert first["downloadedRows"] == 2
     assert second["downloadedRows"] == 0
     assert second["skippedShards"] == 2
+    assert len(first["schemaFingerprint"]) == 64
+    assert all(len(shard["sha256"]) == 64 for shard in first["shards"])
+    assert all(len(shard["sha256"]) == 64 for shard in second["shards"])
     assert list(pd.read_parquet(tmp_path / "2024-01.parquet")) == [
         "game_date",
         "game_pk",

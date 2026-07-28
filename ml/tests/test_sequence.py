@@ -10,6 +10,16 @@ from oyarzabal.sequence import (
     blend_log_probabilities,
     inverse_sqrt_weights,
 )
+from oyarzabal.v83_sequence import (
+    FittedV83Expert,
+    GlobalConditionedSequenceResidual,
+    apply_hierarchical_calibration,
+    fit_hierarchical_calibration,
+    hierarchical_residual_probabilities,
+    load_v83_expert,
+    mild_family_weights,
+    save_v83_expert,
+)
 
 
 def _rows() -> pd.DataFrame:
@@ -86,6 +96,19 @@ def test_current_and_future_values_never_enter_current_sequence_input():
         "current_numeric",
     ):
         np.testing.assert_array_equal(before_batch[name], after_batch[name])
+
+
+def test_missing_numeric_values_have_distinct_observation_masks():
+    rows = _rows()
+    rows.loc[0, "release_spin_rate"] = np.nan
+    examples, _ = _examples(rows)
+    normalizer = SequenceNormalizer.fit(examples, np.array([0, 1, 2]))
+    batch = examples.batch(np.array([1]), normalizer)
+
+    spin = list(examples.token_numeric_columns).index("release_spin_rate")
+    assert batch["token_numeric"][0, -1, spin] == pytest.approx(0)
+    assert batch["token_observed"][0, -1, spin] == 0
+    assert batch["token_observed"][0, -1, 0] == 1
 
 
 def test_repertoire_is_point_in_time_and_excludes_current_pitch():
@@ -184,6 +207,60 @@ def test_zero_sequence_blend_is_exact_global_fallback():
     )
 
 
+def test_hierarchical_residual_scale_zero_is_exact_global():
+    global_probabilities = np.array(
+        [[0.30, 0.20, 0.18, 0.12, 0.15, 0.05]],
+        dtype=np.float64,
+    )
+    family_delta = np.array([[2.0, -1.0, 0.5]])
+    child_delta = np.array([[[1.0, -1.0], [0.5, -0.5], [-2.0, 2.0]]])
+
+    unchanged = hierarchical_residual_probabilities(
+        global_probabilities,
+        family_delta,
+        child_delta,
+        0,
+    )
+    adjusted = hierarchical_residual_probabilities(
+        global_probabilities,
+        family_delta,
+        child_delta,
+        0.5,
+    )
+
+    np.testing.assert_array_equal(unchanged, global_probabilities)
+    np.testing.assert_allclose(adjusted.sum(axis=1), 1)
+    assert not np.allclose(adjusted, global_probabilities)
+
+
+def test_mild_family_weights_are_mean_one_and_bounded():
+    labels = np.array([0] * 100 + [1] * 40 + [2] * 10)
+    weights = mild_family_weights(labels)
+
+    assert weights.mean() == pytest.approx(1)
+    assert weights.min() >= 0.75
+    assert weights.max() <= 1.5
+
+
+def test_hierarchical_calibration_is_fit_only_from_supplied_rows():
+    actual = np.array([0, 0, 2, 2, 4, 4])
+    biased = np.array(
+        [
+            [0.20, 0.30, 0.15, 0.10, 0.15, 0.10],
+            [0.22, 0.28, 0.15, 0.10, 0.15, 0.10],
+        ]
+        * 3
+    )
+    before = -np.log(biased[np.arange(6), actual]).mean()
+    parameters = fit_hierarchical_calibration(actual, biased)
+    adjusted = apply_hierarchical_calibration(biased, parameters)
+    after = -np.log(adjusted[np.arange(6), actual]).mean()
+
+    assert parameters.shape == (9,)
+    assert after < before
+    np.testing.assert_allclose(adjusted.sum(axis=1), 1)
+
+
 def test_transformer_is_causal_and_joint_probabilities_sum_to_one():
     torch = pytest.importorskip("torch")
     rows = _rows()
@@ -226,3 +303,71 @@ def test_transformer_is_causal_and_joint_probabilities_sum_to_one():
     )
     assert torch.isfinite(model.loss(output, batch, location_weight=0.25))
     assert torch.isfinite(model.loss(output, batch, location_weight=0))
+
+
+def test_v83_zero_initialized_residual_returns_global_probabilities():
+    torch = pytest.importorskip("torch")
+    rows = _rows()
+    vocabulary = SequenceVocabulary.fit(rows)
+    examples = (
+        SequenceExampleBuilder(length=4)
+        .build(rows, vocabulary)
+        .with_repertoire(prepare_pitch_rows([rows]))
+    )
+    normalizer = SequenceNormalizer.fit(examples, np.array([0, 1, 2]))
+    batch = {
+        name: torch.as_tensor(value)
+        for name, value in examples.batch(np.array([2, 3]), normalizer).items()
+    }
+    global_probabilities = torch.tensor(
+        [
+            [0.30, 0.20, 0.18, 0.12, 0.15, 0.05],
+            [0.20, 0.25, 0.25, 0.10, 0.10, 0.10],
+        ]
+    )
+    batch["global_probabilities"] = global_probabilities
+    model = GlobalConditionedSequenceResidual(
+        len(vocabulary.descriptions) + 1,
+        length=4,
+        current_numeric_width=examples.current_numeric.shape[1],
+    ).eval()
+
+    with torch.no_grad():
+        output = model(batch)
+
+    torch.testing.assert_close(
+        output["group_probabilities"],
+        global_probabilities,
+    )
+    torch.testing.assert_close(
+        output["group_probabilities"].sum(dim=1),
+        torch.ones(2),
+    )
+
+
+def test_v83_checkpoint_round_trip_preserves_predictions(tmp_path):
+    torch = pytest.importorskip("torch")
+    rows = _rows()
+    vocabulary = SequenceVocabulary.fit(rows)
+    examples = SequenceExampleBuilder(length=4).build(rows, vocabulary)
+    normalizer = SequenceNormalizer.fit(examples, np.array([0, 1, 2]))
+    model = GlobalConditionedSequenceResidual(
+        len(vocabulary.descriptions) + 1,
+        length=4,
+        current_numeric_width=examples.current_numeric.shape[1],
+    )
+    fitted = FittedV83Expert(
+        model,
+        normalizer,
+        1.0,
+        1,
+        0.1,
+        0.2,
+        np.ones(3, dtype=np.float32),
+    )
+    path = tmp_path / "sequence.pt"
+    save_v83_expert(fitted, path)
+    restored = load_v83_expert(path)
+
+    for name, value in model.state_dict().items():
+        torch.testing.assert_close(value, restored.model.state_dict()[name])
