@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -30,10 +30,27 @@ else:
 OPTIONAL_PHYSICAL_START = TOKEN_NUMERIC_COLUMNS.index("release_spin_rate")
 
 
-def mild_family_weights(labels: np.ndarray) -> np.ndarray:
-    counts = np.bincount(np.asarray(labels, dtype=int), minlength=3)
+@dataclass(frozen=True)
+class SequenceObjective:
+    soft_target_strength: float = 0.0
+    focal_gamma: float = 0.0
+    group_balanced: bool = False
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.soft_target_strength <= 0.5:
+            raise ValueError("soft target strength must be between zero and 0.5")
+        if self.focal_gamma not in {0.0, 1.0}:
+            raise ValueError("focal gamma must be zero or one")
+
+
+def mild_class_weights(
+    labels: np.ndarray,
+    *,
+    classes: int,
+) -> np.ndarray:
+    counts = np.bincount(np.asarray(labels, dtype=int), minlength=classes)
     if (counts == 0).any():
-        raise ValueError("family weights require all families")
+        raise ValueError("class weights require every class")
     raw = counts.astype(float) ** -0.25
     low, high = 0.0, 100.0
     for _ in range(60):
@@ -43,6 +60,10 @@ def mild_family_weights(labels: np.ndarray) -> np.ndarray:
         else:
             high = scale
     return np.clip(raw * ((low + high) / 2), 0.75, 1.5).astype(np.float32)
+
+
+def mild_family_weights(labels: np.ndarray) -> np.ndarray:
+    return mild_class_weights(labels, classes=3)
 
 
 def hierarchical_residual_probabilities(
@@ -239,12 +260,30 @@ if nn is not None:
             *,
             balance_strength: float,
             family_weights: torch.Tensor,
+            objective: SequenceObjective | None = None,
+            group_weights: torch.Tensor | None = None,
         ) -> torch.Tensor:
+            objective = objective or SequenceObjective()
             rows = torch.arange(
                 len(batch["target_group"]), device=family_weights.device
             )
             group = output["group_probabilities"]
-            nll = -group[rows, batch["target_group"].long()].clamp_min(1e-12).log()
+            truth = batch["target_group"].long()
+            log_group = group.clamp_min(1e-12).log()
+            truth_probability = group[rows, truth].clamp_min(1e-12)
+            nll = -log_group[rows, truth]
+            if objective.soft_target_strength:
+                teacher = batch["global_probabilities"].float().detach()
+                distillation = -(teacher * log_group).sum(dim=1)
+                strength = objective.soft_target_strength
+                nll = (1 - strength) * nll + strength * distillation
+            if objective.focal_gamma:
+                nll = nll * (1 - truth_probability).pow(objective.focal_gamma)
+            if objective.group_balanced:
+                if group_weights is None:
+                    raise ValueError("group-balanced loss needs group weights")
+                sample_weights = group_weights[truth]
+                nll = nll * sample_weights / sample_weights.mean()
             balanced = F.cross_entropy(
                 output["family_logits"],
                 batch["target_family"].long(),
@@ -270,6 +309,10 @@ class FittedV83Expert:
     balance_strength: float
     block_dropout: float
     family_weights: np.ndarray
+    objective: SequenceObjective = field(default_factory=SequenceObjective)
+    group_weights: np.ndarray = field(
+        default_factory=lambda: np.ones(6, dtype=np.float32)
+    )
 
 
 def _batch(
@@ -324,12 +367,14 @@ def fit_v83_expert(
     description_vocab_size: int,
     balance_strength: float,
     block_dropout: float,
+    objective: SequenceObjective | None = None,
     epochs: int = 6,
     batch_size: int = 8192,
     seed: int = 83,
     device: str | None = None,
 ) -> FittedV83Expert:
     _require_torch()
+    objective = objective or SequenceObjective()
     if balance_strength not in {0.0, 0.1, 0.2}:
         raise ValueError("balance strength must be 0, 0.1, or 0.2")
     if block_dropout not in {0.0, 0.2}:
@@ -342,6 +387,11 @@ def fit_v83_expert(
     normalizer = SequenceNormalizer.fit(examples, train_indices)
     weights = mild_family_weights(examples.target_families[train_indices])
     weight_tensor = torch.as_tensor(weights, device=selected_device)
+    group_weights = mild_class_weights(
+        examples.target_groups[train_indices],
+        classes=6,
+    )
+    group_weight_tensor = torch.as_tensor(group_weights, device=selected_device)
     model = GlobalConditionedSequenceResidual(
         description_vocab_size,
         length=examples.history_indices.shape[1],
@@ -370,6 +420,8 @@ def fit_v83_expert(
                 batch,
                 balance_strength=balance_strength,
                 family_weights=weight_tensor,
+                objective=objective,
+                group_weights=group_weight_tensor,
             )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
@@ -421,6 +473,8 @@ def fit_v83_expert(
         balance_strength,
         block_dropout,
         weights,
+        objective,
+        group_weights,
     )
 
 
@@ -436,6 +490,12 @@ def save_v83_expert(fitted: FittedV83Expert, path: Path) -> None:
             "balance_strength": fitted.balance_strength,
             "block_dropout": fitted.block_dropout,
             "family_weights": fitted.family_weights,
+            "objective": {
+                "soft_target_strength": fitted.objective.soft_target_strength,
+                "focal_gamma": fitted.objective.focal_gamma,
+                "group_balanced": fitted.objective.group_balanced,
+            },
+            "group_weights": fitted.group_weights,
             "length": fitted.model.length,
             "current_numeric_width": (fitted.model.current_projection.in_features - 15)
             // 2,
@@ -462,4 +522,9 @@ def load_v83_expert(path: Path, *, device: str = "cpu") -> FittedV83Expert:
         balance_strength=float(payload["balance_strength"]),
         block_dropout=float(payload["block_dropout"]),
         family_weights=np.asarray(payload["family_weights"], dtype=np.float32),
+        objective=SequenceObjective(**payload.get("objective", {})),
+        group_weights=np.asarray(
+            payload.get("group_weights", np.ones(6)),
+            dtype=np.float32,
+        ),
     )

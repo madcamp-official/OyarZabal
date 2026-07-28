@@ -167,3 +167,14 @@ Global-conditioned Sequence Residual은 Log Loss와 계층 Accuracy를
 V7.2를 active로 유지한다. V8.3 코드와 실패 artifact는 결측 마스크,
 확장 데이터 계약, point-in-time physical/catcher 연구 기반으로 보존하되
 제품 추론에는 연결하지 않는다.
+
+## 2026-07-28 — V8.4는 분포 안전 연구 후보로 통과
+
+V8.3과 같은 평가 게이트를 유지하면서 2024에서만 objective·scale을
+선택하고 2025를 고정 후보로 한 번 확인했다. Log Loss 최저 후보를 그대로
+고르지 않고 허용된 안전 하락폭 0.5%p 중 절반 이상을 남기는 0.25%p
+robust margin을 2024 선택 규칙에 추가했다.
+
+선택된 `FOCAL_1 / scale 0.25` 3-seed ensemble은 2024·2025 정상 및
+physical-drop stress를 모두 통과했다. V8.4는 연구 후보로 승인하되 현재
+replay 파이프라인에 연결하지 않았으므로 제품 active 모델은 V7.2를 유지한다.
