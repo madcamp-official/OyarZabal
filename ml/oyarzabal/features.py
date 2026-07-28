@@ -23,6 +23,36 @@ REPERTOIRE_FEATURES = tuple(
     f"{prefix}{group}" for prefix in REPERTOIRE_PREFIXES for group in PITCH_GROUPS
 )
 PA_COUNT_FEATURES = tuple(f"pa_count_{group}" for group in PITCH_GROUPS)
+V83_PITCH_METRICS = (
+    "release_speed",
+    "release_spin_rate",
+    "pfx_x",
+    "pfx_z",
+)
+V83_RELEASE_METRICS = (
+    "release_pos_x",
+    "release_pos_z",
+    "release_extension",
+)
+V83_CONTEXT_FEATURES = (
+    *(
+        f"v83_{group}_{metric}_{suffix}"
+        for group in PITCH_GROUPS
+        for metric in V83_PITCH_METRICS
+        for suffix in ("season", "recent20", "delta")
+    ),
+    *(f"v83_{group}_physical_support" for group in PITCH_GROUPS),
+    *(
+        f"v83_{metric}_{suffix}"
+        for metric in V83_RELEASE_METRICS
+        for suffix in ("season", "recent20", "delta")
+    ),
+    "v83_release_support",
+    "v83_catcher_support",
+    "v83_battery_support",
+    *(f"v83_catcher_rate_{group}" for group in PITCH_GROUPS),
+    *(f"v83_battery_delta_{group}" for group in PITCH_GROUPS),
+)
 
 LEGACY_NUMERIC_FEATURES = (
     "balls",
@@ -284,7 +314,114 @@ def _add_plate_appearance_features(rows: pd.DataFrame) -> None:
     )
 
 
-def prepare_pitch_rows(frames: Iterable[pd.DataFrame]) -> pd.DataFrame:
+def _past_rolling_mean(
+    values: pd.Series,
+    keys: pd.Series,
+    *,
+    window: int,
+) -> pd.Series:
+    previous = values.groupby(keys, sort=False).shift(1)
+    return (
+        previous.groupby(keys, sort=False)
+        .rolling(window, min_periods=1)
+        .mean()
+        .reset_index(level=0, drop=True)
+        .sort_index()
+    )
+
+
+def _add_v83_context_features(rows: pd.DataFrame) -> pd.DataFrame:
+    """Add ID-free physical and catcher profiles using prior pitches only."""
+    pitcher = rows["pitcher"]
+    season_keys = [pitcher, rows["_season"]]
+    target = rows["target_group"]
+    pitcher_recent_key = pitcher
+    features: dict[str, pd.Series] = {}
+
+    for group in PITCH_GROUPS:
+        is_group = target.eq(group)
+        support = is_group.groupby(season_keys, sort=False).cumsum() - is_group
+        features[f"v83_{group}_physical_support"] = support.astype("float32")
+        for metric in V83_PITCH_METRICS:
+            values = pd.to_numeric(
+                _safe_column(rows, metric, np.nan),
+                errors="coerce",
+            )
+            observed = is_group & values.notna()
+            weighted = values.fillna(0).where(is_group, 0)
+            total = weighted.groupby(season_keys, sort=False).cumsum() - weighted
+            count = observed.groupby(season_keys, sort=False).cumsum() - observed
+            season = total / count.replace(0, np.nan)
+            recent_values = values.where(is_group)
+            recent = _past_rolling_mean(
+                recent_values,
+                pitcher_recent_key,
+                window=20,
+            )
+            features[f"v83_{group}_{metric}_season"] = season.astype("float32")
+            features[f"v83_{group}_{metric}_recent20"] = recent.astype("float32")
+            features[f"v83_{group}_{metric}_delta"] = (recent - season).astype(
+                "float32"
+            )
+
+    release_observed = pd.Series(False, index=rows.index)
+    for metric in V83_RELEASE_METRICS:
+        values = pd.to_numeric(
+            _safe_column(rows, metric, np.nan),
+            errors="coerce",
+        )
+        observed = values.notna()
+        release_observed |= observed
+        weighted = values.fillna(0)
+        total = weighted.groupby(season_keys, sort=False).cumsum() - weighted
+        count = observed.groupby(season_keys, sort=False).cumsum() - observed
+        season = total / count.replace(0, np.nan)
+        recent = _past_rolling_mean(values, pitcher_recent_key, window=20)
+        features[f"v83_{metric}_season"] = season.astype("float32")
+        features[f"v83_{metric}_recent20"] = recent.astype("float32")
+        features[f"v83_{metric}_delta"] = (recent - season).astype("float32")
+    features["v83_release_support"] = (
+        release_observed.groupby(season_keys, sort=False).cumsum() - release_observed
+    ).astype("float32")
+
+    catcher = pd.to_numeric(
+        _safe_column(rows, "fielder_2", np.nan),
+        errors="coerce",
+    ).fillna(-1)
+    supported = target.notna().astype("float64")
+    indicators = {group: target.eq(group).astype("float64") for group in PITCH_GROUPS}
+    catcher_total, catcher_counts = _past_group_counts(
+        rows.assign(_v83_catcher=catcher),
+        ["_v83_catcher"],
+        indicators,
+        supported,
+    )
+    battery_rows = rows.assign(_v83_catcher=catcher)
+    battery_total, battery_counts = _past_group_counts(
+        battery_rows,
+        ["pitcher", "_v83_catcher"],
+        indicators,
+        supported,
+    )
+    features["v83_catcher_support"] = catcher_total.astype("float32")
+    features["v83_battery_support"] = battery_total.astype("float32")
+    for group in PITCH_GROUPS:
+        catcher_rate = (catcher_counts[group] + 1) / (catcher_total + len(PITCH_GROUPS))
+        battery_rate = (battery_counts[group] + 15 * rows[f"career_rate_{group}"]) / (
+            battery_total + 15
+        )
+        features[f"v83_catcher_rate_{group}"] = catcher_rate.astype("float32")
+        features[f"v83_battery_delta_{group}"] = (
+            battery_rate - rows[f"career_rate_{group}"]
+        ).astype("float32")
+    return pd.concat([rows, pd.DataFrame(features, index=rows.index)], axis=1)
+
+
+def prepare_pitch_rows(
+    frames: Iterable[pd.DataFrame],
+    *,
+    include_v83: bool = False,
+) -> pd.DataFrame:
     """Return target pitches with only pre-pitch and lagged information."""
     materialized = [frame for frame in frames if not frame.empty]
     if not materialized:
@@ -362,6 +499,8 @@ def prepare_pitch_rows(frames: Iterable[pd.DataFrame]) -> pd.DataFrame:
     )
 
     _add_repertoire_features(rows)
+    if include_v83:
+        rows = _add_v83_context_features(rows)
 
     for base in (1, 2, 3):
         values = _safe_column(rows, f"on_{base}b", np.nan)
@@ -383,7 +522,10 @@ def prepare_pitch_rows(frames: Iterable[pd.DataFrame]) -> pd.DataFrame:
     rows["pitcher_id"] = pd.to_numeric(rows["pitcher"], errors="raise").astype("int64")
     rows["batter_id"] = pd.to_numeric(rows["batter"], errors="raise").astype("int64")
 
-    for name in NUMERIC_FEATURES:
+    numeric_features = (
+        (*NUMERIC_FEATURES, *V83_CONTEXT_FEATURES) if include_v83 else NUMERIC_FEATURES
+    )
+    for name in numeric_features:
         rows[name] = pd.to_numeric(
             _safe_column(rows, name, np.nan), errors="coerce"
         ).astype("float32")

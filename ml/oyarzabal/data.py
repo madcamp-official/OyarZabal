@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import calendar
+import hashlib
 import json
 import signal
 import traceback
@@ -60,6 +61,14 @@ V8_EXTRA_COLUMNS = (
     "fielder_2",
 )
 V8_STATCAST_COLUMNS = (*STATCAST_COLUMNS, *V8_EXTRA_COLUMNS)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def probe_statcast_schema(
@@ -132,7 +141,14 @@ def collect_statcast_shards(
             latest = dates.max()
             if pd.notna(latest) and latest.date() >= window_end:
                 skipped += 1
-                shards.append({"path": str(path), "status": "skipped"})
+                shards.append(
+                    {
+                        "path": str(path),
+                        "status": "skipped",
+                        "rows": len(existing),
+                        "sha256": _sha256(path),
+                    }
+                )
                 continue
             if pd.notna(latest):
                 window_start = max(
@@ -174,6 +190,7 @@ def collect_statcast_shards(
                 "path": str(path),
                 "status": "extended" if existing is not None else "downloaded",
                 "rows": len(selected),
+                "sha256": _sha256(path),
             }
         )
         print(f"saved {path} ({len(selected):,} rows)")
@@ -184,6 +201,9 @@ def collect_statcast_shards(
         "downloadedRows": downloaded_rows,
         "skippedShards": skipped,
         "shards": shards,
+        "schemaFingerprint": hashlib.sha256(
+            json.dumps(list(columns), separators=(",", ":")).encode()
+        ).hexdigest(),
     }
     manifest = output / "manifest.json"
     temporary = manifest.with_suffix(".json.tmp")
@@ -254,6 +274,13 @@ def main() -> None:
         if probe is not None:
             result["schema"] = "v8"
             result["probe"] = probe
+            manifest = output / "manifest.json"
+            temporary = manifest.with_suffix(".json.tmp")
+            temporary.write_text(
+                json.dumps(result, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            temporary.replace(manifest)
     except Exception as error:
         output.mkdir(parents=True, exist_ok=True)
         (output / "error.json").write_text(

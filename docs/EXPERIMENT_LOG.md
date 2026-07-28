@@ -389,3 +389,25 @@ Git revision:
   2023 `460eae2c5cb37445db1dc125cadc014e4a1d430d99d5d4208cb76dc58c64dff5`,
   2024 `b0800beadb56f183117e708ab5a2263c2f0d4dbfefe4fb6cb7a76fe0c46f8847`,
   2025 `08a4d7ac9eb0085eb796fd5e48d35f382eccf6255bfa1c4135b8c95c361ade5b`.
+
+## 2026-07-28 — V8.3 Robust Global-Conditioned Sequence Residual
+
+- V8.1의 입력 결측과 독립 Transformer 문제를 함께 다루기 위해 numeric
+  observation mask, physical-block dropout, Global-conditioned 계층 logit
+  residual, point-in-time physical drift와 catcher calling profile을 구현했다.
+- 2026-03-25~07-25 V8 확장 캐시 462,653행을 별도 경로에 수집했다.
+  schema probe의 extra-column 결측률은 0~0.78%였고 shard별 SHA-256과
+  schema fingerprint를 기록했다. 공개 2026은 후보 선택에 사용하지 않았다.
+- 2024 740,320구에서 R0~R5와 residual scale 0.25/0.5/0.75/1.0을
+  비교했다. 모든 후보는 Global Log Loss 1.09368을 1.07225~1.07382로
+  낮추고 paired-game bootstrap CI 하한도 양수였다.
+- 반면 각 후보의 최저 Log Loss 지점에서 Macro F1은 42.49~42.63%로
+  Global 46.27%보다 3.64~3.78%p 낮았고 TVD는 16.16~16.53%로
+  Global 8.52%보다 7.64~8.01%p 높았다. physical-drop stress에서도
+  같은 안전 실패가 재현됐다.
+- 완만한 family balance 0.1/0.2는 Macro F1을 회복하지 못했다.
+  physical drift와 catcher profile은 Log Loss를 추가 개선했지만 클래스
+  분포 붕괴를 해결하지 못했다.
+- 사전 게이트에 따라 모든 후보를 기각하고 2025·Personalizer·2026
+  추론을 조기 중단했다. V7.2 active를 유지하며 V8.3은 정상 실패
+  실험으로 보존한다.

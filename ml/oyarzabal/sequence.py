@@ -176,6 +176,10 @@ class SequenceExamples:
     target_dates: np.ndarray
     target_row_indices: np.ndarray
 
+    @property
+    def token_numeric_columns(self) -> tuple[str, ...]:
+        return TOKEN_NUMERIC_COLUMNS
+
     def __len__(self) -> int:
         return len(self.target_groups)
 
@@ -203,6 +207,27 @@ class SequenceExamples:
             repertoire_context=repertoire.astype(np.float32),
         )
 
+    def with_current_context(
+        self,
+        prepared_rows: pd.DataFrame,
+        columns: tuple[str, ...],
+    ) -> SequenceExamples:
+        """Append aligned point-in-time numeric context behind one interface."""
+        if len(prepared_rows) != len(self):
+            raise ValueError("context rows and sequence examples differ")
+        if not np.array_equal(
+            prepared_rows["target"].to_numpy(),
+            self.target_groups,
+        ):
+            raise ValueError("context targets and sequence examples differ")
+        values = prepared_rows[list(columns)].to_numpy(dtype=np.float32)
+        return replace(
+            self,
+            current_numeric=np.column_stack(
+                [self.current_numeric, values]
+            ).astype(np.float32),
+        )
+
     def batch(
         self,
         indices: np.ndarray,
@@ -213,6 +238,7 @@ class SequenceExamples:
         safe = np.maximum(history, 0)
         categorical = self.source_categorical[safe].copy()
         numeric = self.source_numeric[safe].copy()
+        token_observed = np.isfinite(numeric) & ~padding[:, :, None]
         numeric = np.where(
             np.isfinite(numeric),
             numeric,
@@ -224,6 +250,7 @@ class SequenceExamples:
         flags = self.history_flags[indices].astype(np.float32, copy=True)
         categorical[padding] = 0
         numeric[padding] = 0
+        token_observed[padding] = False
         flags[padding] = 0
 
         # Keep one valid BOS-like slot so all-padding rows cannot create NaNs.
@@ -233,6 +260,7 @@ class SequenceExamples:
         # fast-path; an always-valid zero/BOS key prevents NaN propagation.
         padding[:, 0] = False
         current = self.current_numeric[indices].copy()
+        current_observed = np.isfinite(current)
         current = np.where(
             np.isfinite(current),
             current,
@@ -244,10 +272,12 @@ class SequenceExamples:
         return {
             "token_categorical": categorical,
             "token_numeric": numeric.astype(np.float32),
+            "token_observed": token_observed.astype(np.float32),
             "history_flags": flags,
             "padding_mask": padding,
             "current_categorical": self.current_categorical[indices],
             "current_numeric": current.astype(np.float32),
+            "current_observed": current_observed.astype(np.float32),
             "target_group": self.target_groups[indices],
             "target_family": self.target_families[indices],
             "target_child": self.target_children[indices],

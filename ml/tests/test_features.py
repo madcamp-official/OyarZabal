@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 from oyarzabal.features import (
     GLOBAL_CATEGORICAL_FEATURES,
+    V83_CONTEXT_FEATURES,
     chronological_split,
     prepare_pitch_rows,
 )
@@ -184,6 +185,30 @@ def test_gate_support_features_are_point_in_time() -> None:
     assert prepared["count_support"].tolist() == [0, 0, 1]
     assert prepared["stand_support"].tolist() == [0, 1, 0]
     assert prepared["transition_support"].tolist() == [0, 0, 1]
+
+
+def test_v83_physical_and_catcher_profiles_exclude_current_and_future() -> None:
+    source = _rows()
+    source["release_spin_rate"] = [2300.0, 2500.0, 1800.0]
+    source["pfx_x"] = [0.1, -0.4, 0.2]
+    source["pfx_z"] = [1.1, 0.2, 0.5]
+    source["release_pos_x"] = [-2.0, -2.1, -2.2]
+    source["release_pos_z"] = [5.8, 5.7, 5.6]
+    source["release_extension"] = [6.2, 6.1, 6.0]
+    source["fielder_2"] = [100, 100, 200]
+    changed = source.copy()
+    changed.loc[1:, "pitch_type"] = ["CU", "FS"]
+    changed.loc[1:, "release_spin_rate"] = [999.0, 998.0]
+
+    before = prepare_pitch_rows([source], include_v83=True)
+    after = prepare_pitch_rows([changed], include_v83=True)
+
+    assert_frame_equal(
+        before.loc[:1, list(V83_CONTEXT_FEATURES)],
+        after.loc[:1, list(V83_CONTEXT_FEATURES)],
+    )
+    assert before.loc[0, "v83_catcher_support"] == 0
+    assert before.loc[1, "v83_catcher_support"] == 1
 
 
 def test_sparse_bat_score_diff_column_falls_back_row_by_row() -> None:

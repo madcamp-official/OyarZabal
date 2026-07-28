@@ -157,3 +157,13 @@ V5 대비 통계적 성능 승격이 아니라 taxonomy·계층 decoder·Registr
 않고 `performanceCertification=prospective-pending` 상태의 사후 성능
 인증으로 유지한다. 향후 V8의 주 기준선은 같은 taxonomy의 Global-only와
 V7.2로 정한다.
+
+## 2026-07-28 — V8.3은 2024 클래스 균형 게이트에서 기각
+
+Global-conditioned Sequence Residual은 Log Loss와 계층 Accuracy를
+개선했지만 Macro F1과 TVD를 크게 악화시켰다. 사전 정의한 2024 정상·물리결측
+게이트를 통과한 후보가 없으므로 2025 정답을 열어 추가 튜닝하지 않는다.
+
+V7.2를 active로 유지한다. V8.3 코드와 실패 artifact는 결측 마스크,
+확장 데이터 계약, point-in-time physical/catcher 연구 기반으로 보존하되
+제품 추론에는 연결하지 않는다.
