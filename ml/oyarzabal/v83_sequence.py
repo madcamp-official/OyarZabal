@@ -358,6 +358,56 @@ def predict_v83_deltas(
     return np.concatenate(family), np.concatenate(child)
 
 
+def _train_epoch(
+    model: GlobalConditionedSequenceResidual,
+    examples: SequenceExamples,
+    train_indices: np.ndarray,
+    global_probabilities: np.ndarray,
+    normalizer: SequenceNormalizer,
+    optimizer: torch.optim.Optimizer,
+    family_weights: torch.Tensor,
+    group_weights: torch.Tensor,
+    objective: SequenceObjective,
+    *,
+    balance_strength: float,
+    block_dropout: float,
+    batch_size: int,
+    seed: int,
+    epoch: int,
+    device: str,
+    rng: np.random.Generator,
+) -> None:
+    model.train()
+    for positions in _batches(
+        train_indices,
+        batch_size,
+        shuffle=True,
+        seed=seed + epoch,
+    ):
+        batch = _batch(
+            examples,
+            positions,
+            normalizer,
+            global_probabilities,
+            device,
+        )
+        if block_dropout and rng.random() < block_dropout:
+            batch["token_numeric"][..., OPTIONAL_PHYSICAL_START:] = 0
+            batch["token_observed"][..., OPTIONAL_PHYSICAL_START:] = 0
+        optimizer.zero_grad(set_to_none=True)
+        loss = model.loss(
+            model(batch),
+            batch,
+            balance_strength=balance_strength,
+            family_weights=family_weights,
+            objective=objective,
+            group_weights=group_weights,
+        )
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+        optimizer.step()
+
+
 def fit_v83_expert(
     examples: SequenceExamples,
     train_indices: np.ndarray,
@@ -400,32 +450,24 @@ def fit_v83_expert(
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
     best_loss, best_state, best_epoch, stale = float("inf"), None, 0, 0
     for epoch in range(1, epochs + 1):
-        model.train()
-        for positions in _batches(
-            train_indices, batch_size, shuffle=True, seed=seed + epoch
-        ):
-            batch = _batch(
-                examples,
-                positions,
-                normalizer,
-                global_probabilities,
-                selected_device,
-            )
-            if block_dropout and rng.random() < block_dropout:
-                batch["token_numeric"][..., OPTIONAL_PHYSICAL_START:] = 0
-                batch["token_observed"][..., OPTIONAL_PHYSICAL_START:] = 0
-            optimizer.zero_grad(set_to_none=True)
-            loss = model.loss(
-                model(batch),
-                batch,
-                balance_strength=balance_strength,
-                family_weights=weight_tensor,
-                objective=objective,
-                group_weights=group_weight_tensor,
-            )
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-            optimizer.step()
+        _train_epoch(
+            model,
+            examples,
+            train_indices,
+            global_probabilities,
+            normalizer,
+            optimizer,
+            weight_tensor,
+            group_weight_tensor,
+            objective,
+            balance_strength=balance_strength,
+            block_dropout=block_dropout,
+            batch_size=batch_size,
+            seed=seed,
+            epoch=epoch,
+            device=selected_device,
+            rng=rng,
+        )
         temporary = FittedV83Expert(
             model,
             normalizer,
@@ -475,6 +517,73 @@ def fit_v83_expert(
         weights,
         objective,
         group_weights,
+    )
+
+
+def refit_v83_expert(
+    examples: SequenceExamples,
+    train_indices: np.ndarray,
+    global_probabilities: np.ndarray,
+    *,
+    description_vocab_size: int,
+    balance_strength: float,
+    block_dropout: float,
+    objective: SequenceObjective,
+    epochs: int,
+    batch_size: int = 8192,
+    seed: int = 83,
+    device: str | None = None,
+) -> FittedV83Expert:
+    """Refit fixed V8.4 settings on every supplied pre-holdout row."""
+    _require_torch()
+    if epochs <= 0:
+        raise ValueError("refit epochs must be positive")
+    selected_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    torch.manual_seed(seed)
+    rng = np.random.default_rng(seed)
+    normalizer = SequenceNormalizer.fit(examples, train_indices)
+    family_weights = mild_family_weights(examples.target_families[train_indices])
+    group_weights = mild_class_weights(
+        examples.target_groups[train_indices],
+        classes=6,
+    )
+    family_tensor = torch.as_tensor(family_weights, device=selected_device)
+    group_tensor = torch.as_tensor(group_weights, device=selected_device)
+    model = GlobalConditionedSequenceResidual(
+        description_vocab_size,
+        length=examples.history_indices.shape[1],
+        current_numeric_width=examples.current_numeric.shape[1],
+    ).to(selected_device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    for epoch in range(1, epochs + 1):
+        _train_epoch(
+            model,
+            examples,
+            train_indices,
+            global_probabilities,
+            normalizer,
+            optimizer,
+            family_tensor,
+            group_tensor,
+            objective,
+            balance_strength=balance_strength,
+            block_dropout=block_dropout,
+            batch_size=batch_size,
+            seed=seed,
+            epoch=epoch,
+            device=selected_device,
+            rng=rng,
+        )
+    return FittedV83Expert(
+        model=model,
+        normalizer=normalizer,
+        validation_log_loss=float("nan"),
+        epochs=epochs,
+        balance_strength=balance_strength,
+        block_dropout=block_dropout,
+        family_weights=family_weights,
+        objective=objective,
+        group_weights=group_weights,
     )
 
 

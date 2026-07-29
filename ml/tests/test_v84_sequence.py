@@ -1,7 +1,14 @@
 import numpy as np
+import pandas as pd
 import pytest
-from oyarzabal.v83_sequence import SequenceObjective, mild_class_weights
-from oyarzabal.v84 import _select
+from oyarzabal.sequence import SequenceExamples
+from oyarzabal.v83_sequence import (
+    SequenceObjective,
+    mild_class_weights,
+    predict_v83_deltas,
+    refit_v83_expert,
+)
+from oyarzabal.v84 import _select, _validate_holdout_dates
 from oyarzabal.v84_sequence import (
     DistributionSafeTransform,
     calibration_candidates,
@@ -138,3 +145,64 @@ def test_selection_keeps_half_of_safety_tolerance_in_reserve() -> None:
 
     assert selected is not None
     assert selected.objective == "FOCAL_1"
+
+
+def test_refit_uses_all_supplied_training_rows_for_fixed_epochs() -> None:
+    examples = SequenceExamples(
+        history_indices=np.full((6, 4), -1, dtype=np.int32),
+        history_flags=np.zeros((6, 4, 2), dtype=np.uint8),
+        source_categorical=np.zeros((1, 6), dtype=np.int16),
+        source_numeric=np.zeros((1, 11), dtype=np.float32),
+        source_catcher_ids=np.zeros(1, dtype=np.int32),
+        source_dates=np.array(["2025-01-01"], dtype="datetime64[D]"),
+        current_categorical=np.zeros((6, 3), dtype=np.int16),
+        current_numeric=np.zeros((6, 7), dtype=np.float32),
+        repertoire_context=np.zeros((6, 0), dtype=np.float32),
+        pitcher_ids=np.zeros(6, dtype=np.int32),
+        batter_ids=np.zeros(6, dtype=np.int32),
+        catcher_ids=np.zeros(6, dtype=np.int32),
+        target_groups=np.arange(6, dtype=np.int64),
+        target_families=np.repeat(np.arange(3), 2),
+        target_children=np.tile(np.arange(2), 3),
+        target_zones=np.zeros(6, dtype=np.int64),
+        target_dates=np.array(["2025-01-02"] * 6, dtype="datetime64[D]"),
+        target_row_indices=np.arange(6, dtype=np.int32),
+    )
+    global_probabilities = np.full((6, 6), 1 / 6, dtype=np.float32)
+    fitted = refit_v83_expert(
+        examples,
+        np.arange(6),
+        global_probabilities,
+        description_vocab_size=2,
+        balance_strength=0,
+        block_dropout=0,
+        objective=SequenceObjective(focal_gamma=1, group_balanced=True),
+        epochs=1,
+        batch_size=6,
+        seed=1,
+        device="cpu",
+    )
+
+    family, child = predict_v83_deltas(
+        fitted,
+        examples,
+        np.arange(6),
+        global_probabilities,
+        device="cpu",
+    )
+
+    assert fitted.epochs == 1
+    assert family.shape == (6, 3)
+    assert child.shape == (6, 3, 2)
+
+
+def test_2026_rows_are_rejected_from_training_but_required_in_holdout() -> None:
+    training = pd.Series(pd.to_datetime(["2025-11-01"]))
+    holdout = pd.Series(pd.to_datetime(["2026-03-25", "2026-07-28"]))
+
+    _validate_holdout_dates(training, holdout)
+
+    with pytest.raises(ValueError, match="forbidden"):
+        _validate_holdout_dates(holdout, holdout)
+    with pytest.raises(ValueError, match="only 2026"):
+        _validate_holdout_dates(training, training)

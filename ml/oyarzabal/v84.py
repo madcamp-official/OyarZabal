@@ -20,12 +20,18 @@ from .resources import assert_safe, snapshot
 from .sequence import SequenceExampleBuilder, SequenceVocabulary
 from .training import GLOBAL_SPEC, GLOBAL_TEMPERATURE
 from .v8 import _chronological_indices, _fingerprint, _load_raw, _metrics
-from .v83 import _assess, _examples_for_context, _stress_examples
+from .v83 import (
+    _assess,
+    _diagnostic_manifest,
+    _examples_for_context,
+    _stress_examples,
+)
 from .v83_sequence import (
     FittedV83Expert,
     SequenceObjective,
     fit_v83_expert,
     predict_v83_deltas,
+    refit_v83_expert,
     save_v83_expert,
 )
 from .v84_sequence import (
@@ -203,6 +209,7 @@ def _fold(
     seeds: tuple[int, ...],
     epochs: int,
     batch_size: int,
+    refit_full: bool = False,
 ) -> dict[str, object]:
     fold_raw = raw[raw["game_date"].dt.year <= year].copy()
     fold_rows = rows[rows["game_date"].dt.year <= year].reset_index(drop=True)
@@ -236,6 +243,9 @@ def _fold(
     games = fold_rows.iloc[evaluation]["game_pk"].to_numpy()
     candidates: dict[str, object] = {}
     fitted_by_objective: dict[str, list[FittedV83Expert]] = {}
+    full_training = (
+        np.sort(np.concatenate([core, validation])) if refit_full else core
+    )
     for config in objective_configs:
         relevant = [spec for spec in specs if spec.objective == config.name]
         if not relevant:
@@ -256,21 +266,67 @@ def _fold(
             )
             for seed in seeds
         ]
-        fitted_by_objective[config.name] = members
-        deltas = [
-            _member_deltas(
-                member,
-                examples,
-                global_probabilities,
-                validation,
-                evaluation,
-                batch_size=batch_size,
-            )
-            for member in members
-        ]
+        if refit_full:
+            refitted = [
+                refit_v83_expert(
+                    examples,
+                    full_training,
+                    global_probabilities,
+                    description_vocab_size=len(vocabulary.descriptions) + 1,
+                    balance_strength=0,
+                    block_dropout=0.2,
+                    objective=config.objective(),
+                    epochs=member.epochs,
+                    batch_size=batch_size,
+                    seed=seed,
+                )
+                for member, seed in zip(members, seeds, strict=True)
+            ]
+            stress_examples = _stress_examples(examples, context="catcher")
+            deltas = [
+                (
+                    predict_v83_deltas(
+                        tuned,
+                        examples,
+                        validation,
+                        global_probabilities,
+                        batch_size=batch_size,
+                    ),
+                    predict_v83_deltas(
+                        fitted,
+                        examples,
+                        evaluation,
+                        global_probabilities,
+                        batch_size=batch_size,
+                    ),
+                    predict_v83_deltas(
+                        fitted,
+                        stress_examples,
+                        evaluation,
+                        global_probabilities,
+                        batch_size=batch_size,
+                    ),
+                )
+                for tuned, fitted in zip(members, refitted, strict=True)
+            ]
+            fitted_by_objective[config.name] = refitted
+        else:
+            refitted = members
+            deltas = [
+                _member_deltas(
+                    member,
+                    examples,
+                    global_probabilities,
+                    validation,
+                    evaluation,
+                    batch_size=batch_size,
+                )
+                for member in members
+            ]
+            fitted_by_objective[config.name] = members
         for spec in relevant:
             normal_members, stress_members, transforms = [], [], []
-            for member, member_deltas in zip(members, deltas, strict=True):
+            for member, member_deltas in zip(refitted, deltas, strict=True):
                 normal, stress, transform = _member_predictions(
                     member,
                     global_probabilities,
@@ -307,6 +363,15 @@ def _fold(
         "rows": len(evaluation),
         "rowFingerprint": _fingerprint(fold_rows.iloc[evaluation]),
         "globalTrees": trees,
+        "refitFullTraining": refit_full,
+        "sequenceTrainingRows": len(full_training),
+        "sequenceTrainingMaxDate": str(
+            examples.target_dates[full_training].max()
+        ),
+        "tuningEpochs": {
+            name: [member.epochs for member in fitted]
+            for name, fitted in fitted_by_objective.items()
+        },
         "globalMetrics": _metrics(actual, global_probabilities[evaluation]),
         "candidates": candidates,
         "fitted": fitted_by_objective,
@@ -630,6 +695,195 @@ def run(
     return result
 
 
+def _holdout_report(result: dict[str, object]) -> str:
+    global_metrics = result["globalMetrics"]
+    metrics = result["candidate"]["normal"]["metrics"]
+    bootstrap = result["candidate"]["normal"]["bootstrap"]
+    deltas = {
+        "accuracy": metrics["accuracy"] - global_metrics["accuracy"],
+        "family": metrics["familyAccuracy"] - global_metrics["familyAccuracy"],
+        "hierarchical": (
+            metrics["hierarchicalAccuracy"]
+            - global_metrics["hierarchicalAccuracy"]
+        ),
+        "macroF1": metrics["macroF1"] - global_metrics["macroF1"],
+        "logLoss": metrics["logLoss"] - global_metrics["logLoss"],
+        "tvd": (
+            metrics["totalVariationDistance"]
+            - global_metrics["totalVariationDistance"]
+        ),
+    }
+    lines = [
+        "# V8.4 — 2025년까지 재학습, 2026 Temporal Holdout",
+        "",
+        f"- 학습 범위: `{result['trainingRange']['start']}` ~ "
+        f"`{result['trainingRange']['end']}`",
+        f"- 학습 투구: `{result['trainingRows']:,}`",
+        f"- 평가 범위: `{result['holdoutRange']['start']}` ~ "
+        f"`{result['holdoutRange']['end']}`",
+        f"- 평가 투구: `{result['holdoutRows']:,}`",
+        "- 2026 학습 사용: `false`",
+        "- 후보 선택·튜닝 사용: `false`",
+        "",
+        "| 모델 | Exact | Family | Hierarchical | Macro F1 | Log Loss | TVD |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+        (
+            f"| Global | {global_metrics['accuracy']:.2%} | "
+            f"{global_metrics['familyAccuracy']:.2%} | "
+            f"{global_metrics['hierarchicalAccuracy']:.2%} | "
+            f"{global_metrics['macroF1']:.2%} | "
+            f"{global_metrics['logLoss']:.5f} | "
+            f"{global_metrics['totalVariationDistance']:.2%} |"
+        ),
+        (
+            f"| V8.4 | {metrics['accuracy']:.2%} | "
+            f"{metrics['familyAccuracy']:.2%} | "
+            f"{metrics['hierarchicalAccuracy']:.2%} | "
+            f"{metrics['macroF1']:.2%} | "
+            f"{metrics['logLoss']:.5f} | "
+            f"{metrics['totalVariationDistance']:.2%} |"
+        ),
+        (
+            f"| 증감 | {deltas['accuracy']:+.2%}p | "
+            f"{deltas['family']:+.2%}p | "
+            f"{deltas['hierarchical']:+.2%}p | "
+            f"{deltas['macroF1']:+.2%}p | "
+            f"{deltas['logLoss']:+.5f} | "
+            f"{deltas['tvd']:+.2%}p |"
+        ),
+        "",
+        f"- paired-game Log Loss gain: `{bootstrap['meanGain']:.5f}`",
+        f"- 95% CI: `[{bootstrap['ciLower']:.5f}, "
+        f"{bootstrap['ciUpper']:.5f}]`",
+        f"- 정상 게이트: `{result['candidate']['normal']['accepted']}`",
+        (
+            "- physical-drop stress 게이트: "
+            f"`{result['candidate']['physicalDropStress']['accepted']}`"
+        ),
+        "",
+        "이 2026 구간은 과거 프로젝트 실험에서 이미 관찰됐으므로 완전 독립 "
+        "holdout이 아니라 temporal regression 평가다.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _validate_holdout_dates(
+    training_dates: pd.Series,
+    holdout_dates: pd.Series,
+) -> None:
+    if training_dates.dt.year.max() > 2025:
+        raise ValueError("2026 rows are forbidden in V8.4 training data")
+    if set(holdout_dates.dt.year.unique()) != {2026}:
+        raise ValueError("V8.4 temporal holdout must contain only 2026 rows")
+
+
+def run_holdout(
+    training_directory: Path,
+    holdout_directory: Path,
+    artifact_directory: Path,
+    report_path: Path,
+    *,
+    epochs: int,
+    batch_size: int,
+) -> dict[str, object]:
+    resource_before = asdict(snapshot(Path.cwd()))
+    assert_safe(snapshot(Path.cwd()))
+    training_raw = _load_raw(training_directory)
+    holdout_raw = _load_raw(holdout_directory)
+    for frame in (training_raw, holdout_raw):
+        frame["game_date"] = pd.to_datetime(frame["game_date"], errors="coerce")
+    training_dates = training_raw["game_date"].dropna()
+    holdout_dates = holdout_raw["game_date"].dropna()
+    _validate_holdout_dates(training_dates, holdout_dates)
+
+    raw = pd.concat([training_raw, holdout_raw], ignore_index=True)
+    rows = prepare_pitch_rows([raw], include_v83=True)
+    config = next(item for item in OBJECTIVES if item.name == "FOCAL_1")
+    spec = CandidateSpec("FOCAL_1", "none", 0.25)
+    fold = _fold(
+        raw,
+        rows,
+        2026,
+        (config,),
+        (spec,),
+        seeds=CONFIRMATION_SEEDS,
+        epochs=epochs,
+        batch_size=batch_size,
+        refit_full=True,
+    )
+    candidate = fold["candidates"][spec.key]
+    model_directory = Path("models/v8.4-2026-holdout")
+    model_directory.mkdir(parents=True, exist_ok=True)
+    checkpoints = []
+    for index, expert in enumerate(fold["fitted"][spec.objective], 1):
+        checkpoint = model_directory / f"sequence-seed-{index}.pt"
+        save_v83_expert(expert, checkpoint)
+        checkpoints.append(checkpoint.name)
+    vocabulary_path = model_directory / "sequence-vocabulary.pkl"
+    with vocabulary_path.open("wb") as handle:
+        pickle.dump(fold["vocabulary"], handle)
+
+    configuration = {
+        "model": "V8.4",
+        "objective": asdict(config),
+        "spec": asdict(spec),
+        "seeds": list(CONFIRMATION_SEEDS),
+        "epochsLimit": epochs,
+        "batchSize": batch_size,
+        "protocol": "tune-epochs-and-calibration_pre2026_refit-all-through2025",
+    }
+    public_fold = _public_fold(fold)
+    result = {
+        "schemaVersion": "8.4-holdout-1",
+        "modelVersion": "V8.4-distribution-safe-sequence-residual",
+        "evaluationStatus": (
+            "passed"
+            if candidate["normal"]["accepted"]
+            and candidate["physicalDropStress"]["accepted"]
+            else "failed"
+        ),
+        "generatedAt": datetime.now(UTC).isoformat(),
+        "trainingRange": {
+            "start": training_dates.min().date().isoformat(),
+            "end": training_dates.max().date().isoformat(),
+        },
+        "holdoutRange": {
+            "start": holdout_dates.min().date().isoformat(),
+            "end": holdout_dates.max().date().isoformat(),
+        },
+        "trainingRawRows": len(training_raw),
+        "trainingRows": public_fold["sequenceTrainingRows"],
+        "trainingMaxDate": public_fold["sequenceTrainingMaxDate"],
+        "holdoutRawRows": len(holdout_raw),
+        "holdoutRows": public_fold["rows"],
+        "holdoutRowFingerprint": public_fold["rowFingerprint"],
+        "holdoutManifest": _diagnostic_manifest(holdout_directory),
+        "2026UsedForTraining": False,
+        "2026UsedForSelection": False,
+        "historicallyObserved": True,
+        "configuration": configuration,
+        "configurationHash": hashlib.sha256(
+            json.dumps(configuration, sort_keys=True).encode()
+        ).hexdigest(),
+        "tuningEpochs": public_fold["tuningEpochs"],
+        "globalTrees": public_fold["globalTrees"],
+        "globalMetrics": public_fold["globalMetrics"],
+        "candidate": candidate,
+        "checkpoints": checkpoints,
+        "vocabulary": vocabulary_path.name,
+        "resourceBefore": resource_before,
+        "resourceAfter": asdict(snapshot(Path.cwd())),
+    }
+    artifact_directory.mkdir(parents=True, exist_ok=True)
+    (artifact_directory / "result.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+    )
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(_holdout_report(result))
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -654,16 +908,41 @@ def main() -> None:
         action="store_true",
         help="reuse the existing 2024 ablation artifact",
     )
-    args = parser.parse_args()
-    result = run(
-        args.data,
-        args.artifacts,
-        args.report,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        resume_selection=args.resume_selection,
+    parser.add_argument(
+        "--holdout-data",
+        type=Path,
+        help="evaluate frozen V8.4 after refitting all pre-2026 rows",
     )
-    print(json.dumps(result["selection"], ensure_ascii=False, indent=2))
+    args = parser.parse_args()
+    if args.holdout_data is not None:
+        result = run_holdout(
+            args.data,
+            args.holdout_data,
+            args.artifacts,
+            args.report,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+        )
+        print(
+            json.dumps(
+                {
+                    "evaluationStatus": result["evaluationStatus"],
+                    "holdoutRows": result["holdoutRows"],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        result = run(
+            args.data,
+            args.artifacts,
+            args.report,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            resume_selection=args.resume_selection,
+        )
+        print(json.dumps(result["selection"], ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

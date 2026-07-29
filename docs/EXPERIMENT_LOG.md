@@ -438,3 +438,23 @@ Git revision:
   수렴해 독립 이득이 없었다.
 - V8.4는 연구 후보로 통과했다. replay 제품 연결은 이번 실험 범위가
   아니므로 V7.2 active 상태를 유지한다.
+
+## 2026-07-29 — V8.4 2025 전체 재학습 및 2026 Temporal Holdout
+
+- 고정된 `FOCAL_1 / blend 0.25 / 3-seed ensemble` 후보의 epoch와
+  calibration을 2026 이전 검증 구간에서만 정한 뒤, 2022-03-17부터
+  2025-11-01까지 지원 6종 2,990,491구로 Sequence Expert를 재학습했다.
+- 2026 데이터는 학습·후보 선택·튜닝에 사용하지 않았다. 평가는
+  2026-03-25~07-27의 467,300구, 1,596경기에서 수행했다.
+- Global 대비 V8.4는 Exact 47.46%→47.91%, Family 58.07%→58.67%,
+  Hierarchical 52.76%→53.29%, Macro F1 45.60%→45.69%,
+  Log Loss 1.14670→1.13774, TVD 11.05%→9.93%를 기록했다.
+- paired-game Log Loss gain은 0.00896, 95% CI는
+  `[0.00869, 0.00920]`였고 정상·physical-drop stress 게이트를 모두
+  통과했다.
+- 이 2026 구간은 과거 프로젝트 실험에서 이미 관찰됐으므로 새로운 독립
+  holdout이 아니라 고정 후보의 temporal regression 평가로 해석한다.
+- 설정 hash:
+  `5a302546d1f5d4fc4afb9a36c87eb554631fd56492a64dd36ee806abd4ae11a3`
+- row fingerprint:
+  `6f33ebc4d10aa3a7d31b26cb0beb854b3f9dcac54360ee47e0a912f9893d245b`
