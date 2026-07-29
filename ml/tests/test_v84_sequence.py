@@ -148,6 +148,7 @@ def test_selection_keeps_half_of_safety_tolerance_in_reserve() -> None:
 
 
 def test_refit_uses_all_supplied_training_rows_for_fixed_epochs() -> None:
+    pytest.importorskip("torch")
     examples = SequenceExamples(
         history_indices=np.full((6, 4), -1, dtype=np.int32),
         history_flags=np.zeros((6, 4, 2), dtype=np.uint8),
