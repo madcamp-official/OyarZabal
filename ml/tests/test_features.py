@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 from oyarzabal.features import (
     GLOBAL_CATEGORICAL_FEATURES,
+    V9_GAME_STATE_FEATURES,
     V83_CONTEXT_FEATURES,
     chronological_split,
     prepare_pitch_rows,
@@ -209,6 +210,61 @@ def test_v83_physical_and_catcher_profiles_exclude_current_and_future() -> None:
     )
     assert before.loc[0, "v83_catcher_support"] == 0
     assert before.loc[1, "v83_catcher_support"] == 1
+
+
+def test_v9_game_state_excludes_current_and_future_pitch_information() -> None:
+    source = pd.concat([_rows().iloc[:2]] * 3, ignore_index=True).iloc[:5].copy()
+    source["game_pk"] = 1
+    source["game_date"] = "2024-01-01"
+    source["at_bat_number"] = [1, 1, 2, 2, 3]
+    source["pitch_number"] = [1, 2, 1, 2, 1]
+    source["pitch_type"] = ["FF", "SL", "FF", "CH", "FF"]
+    source["release_speed"] = [95.0, 85.0, 94.0, 82.0, 93.0]
+    source["release_spin_rate"] = [2300, 2500, 2280, 1800, 2260]
+    source["pfx_x"] = [0.1, -0.4, 0.2, 0.3, 0.25]
+    source["pfx_z"] = [1.1, 0.2, 1.0, 0.5, 0.9]
+    source["release_pos_x"] = [-2.0, -2.1, -2.0, -2.2, -2.0]
+    source["release_pos_z"] = [5.8, 5.7, 5.8, 5.6, 5.8]
+    source["release_extension"] = [6.2, 6.1, 6.2, 6.0, 6.1]
+    changed = source.copy()
+    changed.loc[2:, "pitch_type"] = ["CU", "FS", "FC"]
+    changed.loc[2:, "release_speed"] = [70.0, 71.0, 72.0]
+    changed.loc[2:, "release_spin_rate"] = [900, 901, 902]
+
+    before = prepare_pitch_rows([source], include_v9=True)
+    after = prepare_pitch_rows([changed], include_v9=True)
+
+    assert_frame_equal(
+        before.loc[:2, list(V9_GAME_STATE_FEATURES)],
+        after.loc[:2, list(V9_GAME_STATE_FEATURES)],
+    )
+    assert before.loc[2, "v9_game_support_FOUR_SEAM"] == 1
+    assert before.loc[2, "v9_game_last_used_FOUR_SEAM"] == 2
+    assert before.loc[2, "v9_FOUR_SEAM_release_speed_game"] == pytest.approx(95)
+
+
+def test_v9_recent_game_mix_is_normalized_and_game_bound() -> None:
+    source = pd.concat([_rows().iloc[:2]] * 3, ignore_index=True).iloc[:5].copy()
+    source["game_pk"] = [1, 1, 1, 1, 2]
+    source["game_date"] = [
+        "2024-01-01",
+        "2024-01-01",
+        "2024-01-01",
+        "2024-01-01",
+        "2024-02-01",
+    ]
+    source["at_bat_number"] = [1, 1, 2, 2, 1]
+    source["pitch_number"] = [1, 2, 1, 2, 1]
+    source["pitch_type"] = ["FF", "SL", "FF", "CH", "CU"]
+
+    prepared = prepare_pitch_rows([source], include_v9=True)
+    rate_columns = [f"v9_game_recent20_rate_{group}" for group in PITCH_GROUPS]
+
+    assert prepared[rate_columns].sum(axis=1).tolist() == pytest.approx([1] * 5)
+    assert prepared.loc[0, "v9_inning_pitch_count"] == 0
+    assert prepared.loc[3, "v9_inning_pitch_count"] == 3
+    assert prepared.loc[4, "v9_inning_pitch_count"] == 0
+    assert pd.isna(prepared.loc[0, "v9_game_last_used_FOUR_SEAM"])
 
 
 def test_sparse_bat_score_diff_column_falls_back_row_by_row() -> None:

@@ -10,7 +10,8 @@
 > 기본 모델로 `active`다. 이는 V5 대비 통계적 승격이 아니라 제품 세대교체다.
 > V5의 30명·28,734구 고정 cohort에서는 Log Loss가 0.0086 나빴으므로
 > prospective 사후 성능 인증은 계속한다. 연구 기준선은 V8.4이며, V8.5는
-> `research-passed / prospective-pending` 후보로 동결돼 있다.
+> `research-passed / prospective-pending` 후보다. V9-A는 안전 게이트를
+> 통과했지만 실용적 최소 효과에는 못 미쳐 `shadow-only`로 보존한다.
 
 V7의 실제 Registry와 계층형 지표 결과는
 [V7 리포트](2026-07-27-v7-hierarchical-incremental.md)에 정리했다.
@@ -37,6 +38,8 @@ point-in-time 레퍼토리로 Macro F1을 안전 범위까지 회복한 결과�
 재학습한 고정 후보의 historical regression 결과다.
 [V8.5 Sequence-adjusted Personalizer](2026-07-29-v8.5-sequence-personalizer.md)는
 V8.4 위에서 개인화를 다시 학습한 prospective-pending 후보를 기록한다.
+[V9-A Game-State Expert](2026-07-29-v9a-game-state.md)는 현재 경기의 최근
+구종 mix·마지막 사용 거리와 당일 구위 drift를 분리 검증한 결과다.
 
 ## 모델 진화 흐름
 
@@ -58,7 +61,8 @@ flowchart TD
     V83["V8.3 · physical/catcher context<br/>분포 붕괴 · 기각"]
     V84["V8.4 · distribution-safe sequence<br/>2024·2025 통과"]
     V85["V8.5 · sequence-adjusted personalizer<br/>research-passed · prospective-pending"]
-    V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7 --> V72 --> V73 --> V74 --> V75 --> V8 --> V81 --> V83 --> V84 --> V85
+    V9A["V9-A · current game-state expert<br/>안전 통과 · shadow-only"]
+    V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7 --> V72 --> V73 --> V74 --> V75 --> V8 --> V81 --> V83 --> V84 --> V85 --> V9A
 ```
 
 ## 버전 요약
@@ -82,6 +86,7 @@ flowchart TD
 | [V8.4](2026-07-28-v8.4-distribution-safe-sequence.md) | 분포 안전 objective + 3-seed ensemble | 2025 OOF 750,581구 | 48.60% → **48.99%** | 46.60% → **46.59%** | 1.1103 → **1.1023** | 연구 게이트 통과 |
 | [V8.4 2026](2026-07-29-v8.4-2026-holdout.md) | 2025까지 전체 재학습 | 2026 historical 467,300구 | 47.46% → **47.91%** | 45.60% → **45.69%** | 1.1467 → **1.1377** | temporal regression 통과 |
 | [V8.5](2026-07-29-v8.5-sequence-personalizer.md) | V8.4 위 pooled Personalizer 재학습 | 2025 OOF 750,581구 | 48.99% → **49.00%** | **46.59%** → 46.59% | 1.1023 → **1.1021** | research-passed · prospective-pending |
+| [V9-A](2026-07-29-v9a-game-state.md) | 최근 20구 game mix + last-used Expert | 2025 OOF 750,581구 | 48.99% → **49.19%** | **46.59%** → 46.54% | 1.1023 → **1.0989** | 안전 통과 · 실용 기준 미달 · Shadow |
 
 V8.2는 독립적으로 동결된 모델·리포트가 없어 표에 넣지 않았다. 번호는 실험
 브랜치의 중간 반복을 보존한 것이며, 결과가 남은 다음 정식 실험은 V8.3이다.
@@ -150,6 +155,7 @@ residual 적용 범위가 작은 효과를 그대로 반영한다.
 | V5 ↔ V6/V7 2026-07-26 이후 | 가능 | 사전 고정한 prospective 조건 충족 후 첫 평가만 사용 |
 | V8 ↔ V8.1 ↔ V8.4 2025 | 가능 | 같은 2025 OOF 750,581구와 같은 Global 기준선 |
 | V8.4 ↔ V8.5 2025 | 가능 | 같은 행의 V8.4 OOF를 V8.5 base로 사용 |
+| V8.4 ↔ V9-A 2025 | 가능 | 같은 행의 V8.4 OOF와 고정된 2024 선택 규칙 사용 |
 | V8.4/V8.5 2026 | 회귀 진단만 | 이미 관찰된 historical 구간으로 선택·승격 근거가 아님 |
 
 ## 통일된 평가 표본
