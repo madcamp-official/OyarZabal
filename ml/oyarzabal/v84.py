@@ -210,6 +210,7 @@ def _fold(
     epochs: int,
     batch_size: int,
     refit_full: bool = False,
+    keep_probabilities: bool = False,
 ) -> dict[str, object]:
     fold_raw = raw[raw["game_date"].dt.year <= year].copy()
     fold_rows = rows[rows["game_date"].dt.year <= year].reset_index(drop=True)
@@ -357,8 +358,10 @@ def _fold(
                     stress,
                 ),
             }
+            if keep_probabilities:
+                candidates[spec.key]["probabilities"] = normal
             print(f"V8.4 {year}: {spec.key} complete", flush=True)
-    return {
+    result = {
         "year": year,
         "rows": len(evaluation),
         "rowFingerprint": _fingerprint(fold_rows.iloc[evaluation]),
@@ -377,6 +380,9 @@ def _fold(
         "fitted": fitted_by_objective,
         "vocabulary": vocabulary,
     }
+    if keep_probabilities:
+        result["globalProbabilities"] = global_probabilities[evaluation]
+    return result
 
 
 def _selection_specs() -> tuple[CandidateSpec, ...]:

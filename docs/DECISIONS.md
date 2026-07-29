@@ -178,3 +178,16 @@ robust margin을 2024 선택 규칙에 추가했다.
 선택된 `FOCAL_1 / scale 0.25` 3-seed ensemble은 2024·2025 정상 및
 physical-drop stress를 모두 통과했다. V8.4는 연구 후보로 승인하되 현재
 replay 파이프라인에 연결하지 않았으므로 제품 active 모델은 V7.2를 유지한다.
+
+## 2026-07-29 — V8.5는 Sequence-adjusted Personalizer 연구 후보로 동결
+
+V8.4 OOF를 base로 Personalizer 전체를 다시 학습하고, 선수별 최종 scale을
+`hardSafety × safeAlpha × reliability × contextGate` 하나로 정의한다.
+Registry는 full/limited/shadow 상태와 safeAlpha 증거만 저장하며 별도 multiplier를
+두지 않는다.
+
+V8.5는 2024·2025 안전 조건과 paired-game Log Loss bootstrap을 통과했지만
+증분 Log Loss 개선은 약 0.0002로 작다. 따라서 제품 active V7.2와 replay는
+바꾸지 않고 `research-passed / prospective-pending`으로 동결한다. 이미 본
+2026 구간은 historical retrospective로만 기록하며, 2026-07-30 이후
+prospective 단일 look 전에는 승격하지 않는다.
