@@ -458,3 +458,36 @@ Git revision:
   `5a302546d1f5d4fc4afb9a36c87eb554631fd56492a64dd36ee806abd4ae11a3`
 - row fingerprint:
   `6f33ebc4d10aa3a7d31b26cb0beb854b3f9dcac54360ee47e0a912f9893d245b`
+
+## 2026-07-29 — V8.5 Sequence-adjusted Pitcher Personalizer
+
+- V8.4의 시간순 OOF 확률을 새 base로 두고 `pitcher_id × count_bucket ×
+  stand` pooled Residual, ID-free Context Gate, Reliability와 선수별
+  safeAlpha Registry를 모두 다시 학습했다. 공통 raw residual scale은
+  2024 중간 구간에서 `0.25`로 고정했다.
+- 첫 실행의 공통 scale screen에 최종 E단계의 상대 TVD 허용폭을 잘못
+  적용해 조기 중단했다. Gate·Registry·2025 결과를 열기 전에 이를 발견했고,
+  기존 공통 scale의 절대 안전 조건과 E단계 상대 안전 조건을 분리한 뒤
+  실험을 처음부터 다시 실행했다. 성능 결과를 보고 후보를 추가하거나
+  threshold를 바꾸지 않았다.
+- 2024 마지막 구간 93,554구에서 V8.4 대비 Exact
+  49.1577%→49.1759%, Macro F1 45.5681%→45.5691%, Log Loss
+  1.088225→1.087964였다. paired-game Log Loss gain 95% CI는
+  `[0.000206, 0.000312]`였다.
+- 동결 확인인 2025 750,581구에서는 Exact 48.9926%→49.0044%,
+  Family 58.7530%→58.7649%, Hierarchical 53.8728%→53.8847%,
+  Macro F1 46.5905%→46.5884%, Log Loss 1.102288→1.102093,
+  TVD 8.5247%→8.4814%였다. paired-game Log Loss gain 95% CI는
+  `[0.000174, 0.000213]`였다.
+- 최종 Registry는 `full 15 / limited 21 / shadow 62`다. 2025
+  Personalizer 개입은 124,235구(16.55%), effective scale
+  평균/중앙/p90은 `0.0187 / 0 / 0.0814`였다. shadow와 Registry 밖
+  투수는 V8.4 확률과 bit-for-bit 동일했다.
+- 2026 후향 진단은 OOF 배열과 동시 상주할 때 메모리 사용량이 위험 수준까지
+  올라가 중단하고 별도 프로세스로 분리했다. 고정된 467,300구에서 Log Loss
+  1.137736→1.137608, paired-game gain CI `[0.000103, 0.000151]`였지만,
+  이는 이미 관찰된 historical retrospective이며 학습·선택에 사용하지 않았다.
+- V8.5는 `research-passed / prospective-pending`으로 기록한다. 개선은
+  통계적으로 일관되지만 절대폭이 작으므로 V7.2 active와 replay 라우팅은
+  변경하지 않는다. prospective 시작일은 2026-07-30이며 30일·전체
+  100,000구·Personalizer 개입 15,000구를 모두 채운 뒤 한 번만 본다.

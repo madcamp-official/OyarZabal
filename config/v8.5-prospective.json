@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "candidateModel": "V8.5",
+  "activeModel": "V7.2",
+  "status": "prospective-pending",
+  "freezeDate": "2026-07-29",
+  "startDate": "2026-07-30",
+  "minimumDays": 30,
+  "minimumMlbPitches": 100000,
+  "minimumPersonalizerInterventions": 15000,
+  "looks": 1,
+  "configurationHash": "f7932075b10caa557f16702374eeb6905bc57c50f2195725d83ef21adcfe4f77",
+  "modelHashes": {
+    "pooled-residual.pkl": "e64ad4fef2b2380f19415c4ad1b0778f27f27cdac71eb77a3dc51cf34729cae2",
+    "context-gate.pkl": "7f77ebc8680dbfcf210c198dbeca4b7676a0ada0d69de80605a55afc23d2016d",
+    "registry.json": "bb0d1dd238bb8034f805760a3aaea377ae137f8fcb085a70e1a37f89b51d8299"
+  },
+  "retrospective": {
+    "range": "2026-03-25..2026-07-27",
+    "rowFingerprint": "6f33ebc4d10aa3a7d31b26cb0beb854b3f9dcac54360ee47e0a912f9893d245b",
+    "historicallyObserved": true,
+    "usedForTraining": false,
+    "usedForSelection": false
+  }
+}

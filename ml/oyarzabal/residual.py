@@ -29,6 +29,7 @@ RESIDUAL_FEATURES = (
     "stand",
     "pa_prev_pitch_1",
 )
+V85_RESIDUAL_FEATURES = ("pitcher_id", "count_bucket", "stand")
 RESIDUAL_SCALES = (0.25, 0.5, 0.75, 1.0)
 SAFE_SCALE_MULTIPLIERS = tuple(value / 20 for value in range(1, 21))
 GATE_CATEGORICAL_FEATURES = (
@@ -68,6 +69,7 @@ class FittedResidual:
     model: XGBClassifier
     tree_count: int
     device: str
+    feature_names: tuple[str, ...] = RESIDUAL_FEATURES
 
 
 @dataclass
@@ -94,8 +96,11 @@ def count_bucket(rows: pd.DataFrame) -> pd.Series:
     return pd.Series(values, index=rows.index, dtype="object")
 
 
-def residual_feature_frame(rows: pd.DataFrame) -> pd.DataFrame:
-    return pd.DataFrame(
+def residual_feature_frame(
+    rows: pd.DataFrame,
+    feature_names: Sequence[str] = RESIDUAL_FEATURES,
+) -> pd.DataFrame:
+    frame = pd.DataFrame(
         {
             "pitcher_id": rows["pitcher_id"].astype(str),
             "count_bucket": count_bucket(rows),
@@ -106,18 +111,28 @@ def residual_feature_frame(rows: pd.DataFrame) -> pd.DataFrame:
         },
         index=rows.index,
     )
+    unknown = set(feature_names) - set(frame)
+    if unknown:
+        raise ValueError(f"unknown residual features: {sorted(unknown)}")
+    return frame[list(feature_names)]
 
 
 def gate_feature_frame(
     rows: pd.DataFrame,
     global_probabilities: np.ndarray,
     correction: np.ndarray,
+    *,
+    reference_scale: float = 0.5,
 ) -> pd.DataFrame:
     global_values = validate_probability_matrix(global_probabilities)
     residual_values = np.asarray(correction, dtype=float)
     if len(rows) != len(global_values) or residual_values.shape != global_values.shape:
         raise ValueError("gate rows and model outputs are misaligned")
-    reference = apply_correction(global_values, residual_values, 0.5)
+    reference = apply_correction(
+        global_values,
+        residual_values,
+        reference_scale,
+    )
     midpoint = (global_values + reference) / 2
     js = 0.5 * (
         np.where(
@@ -175,9 +190,15 @@ def gate_targets(
     actual: np.ndarray,
     global_probabilities: np.ndarray,
     correction: np.ndarray,
+    *,
+    reference_scale: float = 0.5,
 ) -> np.ndarray:
     global_values = validate_probability_matrix(global_probabilities)
-    reference = apply_correction(global_values, correction, 0.5)
+    reference = apply_correction(
+        global_values,
+        correction,
+        reference_scale,
+    )
     labels = np.asarray(actual, dtype=int)
     if len(labels) != len(global_values):
         raise ValueError("gate target rows are misaligned")
@@ -245,29 +266,42 @@ def train_gate(
     *,
     n_estimators: int,
     tuning: tuple[pd.DataFrame, np.ndarray, np.ndarray] | None = None,
+    reference_scale: float = 0.5,
 ) -> FittedGate:
     labels = gate_targets(
         rows["target"].to_numpy(),
         global_probabilities,
         correction,
+        reference_scale=reference_scale,
     )
     if len(np.unique(labels)) < 2:
         raise ValueError("gate training requires both utility classes")
     preprocessor = _gate_preprocessor()
     train_x = preprocessor.fit_transform(
-        gate_feature_frame(rows, global_probabilities, correction)
+        gate_feature_frame(
+            rows,
+            global_probabilities,
+            correction,
+            reference_scale=reference_scale,
+        )
     )
     tune_x = None
     tune_labels = None
     if tuning is not None:
         tune_rows, tune_global, tune_correction = tuning
         tune_x = preprocessor.transform(
-            gate_feature_frame(tune_rows, tune_global, tune_correction)
+            gate_feature_frame(
+                tune_rows,
+                tune_global,
+                tune_correction,
+                reference_scale=reference_scale,
+            )
         )
         tune_labels = gate_targets(
             tune_rows["target"].to_numpy(),
             tune_global,
             tune_correction,
+            reference_scale=reference_scale,
         )
     for device in ("cuda", "cpu"):
         model = _gate_model(
@@ -299,9 +333,16 @@ def predict_context_gate(
     rows: pd.DataFrame,
     global_probabilities: np.ndarray,
     correction: np.ndarray,
+    *,
+    reference_scale: float = 0.5,
 ) -> np.ndarray:
     transformed = fitted.preprocessor.transform(
-        gate_feature_frame(rows, global_probabilities, correction)
+        gate_feature_frame(
+            rows,
+            global_probabilities,
+            correction,
+            reference_scale=reference_scale,
+        )
     )
     probabilities = np.asarray(fitted.model.predict_proba(transformed), dtype=float)
     if probabilities.shape != (len(rows), 2):
@@ -422,6 +463,7 @@ def train_final_residual(
     global_probabilities: np.ndarray,
     *,
     n_estimators: int,
+    feature_names: Sequence[str] = RESIDUAL_FEATURES,
 ) -> FittedResidual:
     if len(rows) != len(global_probabilities) or rows.empty:
         raise ValueError("residual training rows are empty or misaligned")
@@ -430,14 +472,23 @@ def train_final_residual(
         min_frequency=20,
         sparse_output=True,
     )
-    transformed = encoder.fit_transform(residual_feature_frame(rows))
+    selected_features = tuple(feature_names)
+    transformed = encoder.fit_transform(
+        residual_feature_frame(rows, selected_features)
+    )
     model, device = _fit(
         transformed,
         rows["target"].to_numpy(),
         _base_margin(global_probabilities),
         n_estimators=n_estimators,
     )
-    return FittedResidual(encoder, model, n_estimators, device)
+    return FittedResidual(
+        encoder,
+        model,
+        n_estimators,
+        device,
+        selected_features,
+    )
 
 
 def train_residual_with_tuning(
@@ -445,6 +496,7 @@ def train_residual_with_tuning(
     global_probabilities: np.ndarray,
     *,
     n_estimators: int = 600,
+    feature_names: Sequence[str] = RESIDUAL_FEATURES,
 ) -> FittedResidual:
     if len(rows) != len(global_probabilities) or rows.empty:
         raise ValueError("residual tuning rows are empty or misaligned")
@@ -459,8 +511,13 @@ def train_residual_with_tuning(
         min_frequency=20,
         sparse_output=True,
     )
-    core = encoder.fit_transform(residual_feature_frame(rows.loc[core_mask]))
-    tuning = encoder.transform(residual_feature_frame(rows.loc[tuning_mask]))
+    selected_features = tuple(feature_names)
+    core = encoder.fit_transform(
+        residual_feature_frame(rows.loc[core_mask], selected_features)
+    )
+    tuning = encoder.transform(
+        residual_feature_frame(rows.loc[tuning_mask], selected_features)
+    )
     model, _ = _fit(
         core,
         rows.loc[core_mask, "target"].to_numpy(),
@@ -477,11 +534,17 @@ def train_residual_with_tuning(
         rows,
         global_probabilities,
         n_estimators=tree_count,
+        feature_names=selected_features,
     )
 
 
 def predict_correction(fitted: FittedResidual, rows: pd.DataFrame) -> np.ndarray:
-    transformed = fitted.encoder.transform(residual_feature_frame(rows))
+    transformed = fitted.encoder.transform(
+        residual_feature_frame(
+            rows,
+            getattr(fitted, "feature_names", RESIDUAL_FEATURES),
+        )
+    )
     zero_margin = np.zeros((len(rows), len(PITCH_GROUPS)), dtype=float)
     correction = np.asarray(
         fitted.model.predict(
