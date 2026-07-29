@@ -191,3 +191,14 @@ V8.5는 2024·2025 안전 조건과 paired-game Log Loss bootstrap을 통과했�
 바꾸지 않고 `research-passed / prospective-pending`으로 동결한다. 이미 본
 2026 구간은 historical retrospective로만 기록하며, 2026-07-30 이후
 prospective 단일 look 전에는 승격하지 않는다.
+
+## 2026-07-29 — V9-A는 안전 통과했지만 shadow-only로 보존
+
+V8.4 위 Game-State Expert는 최근 20구 구종 mix와 마지막 사용 거리만으로
+2024·2025 Log Loss와 Exact·Family를 개선했다. 반면 당일 구속·회전·무브먼트·
+릴리스 drift는 strategy 단독을 넘는 독립 이득이 없었다.
+
+선택된 `strategy × 0.1`은 안전 게이트를 통과했지만 사전 실용 기준에는
+못 미쳤다. 따라서 V9-A를 `research-passed / shadow-only`로 기록하고
+V7.2 active와 replay를 유지한다. 2025 결과를 본 뒤 scale이나 피처를
+추가하지 않으며 2026 historical 구간도 열지 않는다.

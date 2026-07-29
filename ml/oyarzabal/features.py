@@ -53,6 +53,39 @@ V83_CONTEXT_FEATURES = (
     *(f"v83_catcher_rate_{group}" for group in PITCH_GROUPS),
     *(f"v83_battery_delta_{group}" for group in PITCH_GROUPS),
 )
+V9_STRATEGY_FEATURES = (
+    "balls",
+    "strikes",
+    "outs_when_up",
+    "inning",
+    "base_1",
+    "base_2",
+    "base_3",
+    "score_diff",
+    "game_pitch_count",
+    "n_thruorder_pitcher",
+    "pitcher_days_since_prev_game",
+    "v9_inning_pitch_count",
+    "v9_game_mix_js",
+    *(f"v9_game_recent20_rate_{group}" for group in PITCH_GROUPS),
+    *(f"v9_game_support_{group}" for group in PITCH_GROUPS),
+    *(f"v9_game_last_used_{group}" for group in PITCH_GROUPS),
+)
+V9_PHYSICAL_FEATURES = (
+    *(
+        f"v9_{group}_{metric}_{suffix}"
+        for group in PITCH_GROUPS
+        for metric in V83_PITCH_METRICS
+        for suffix in ("game", "game_delta")
+    ),
+    *(
+        f"v9_{metric}_{suffix}"
+        for metric in V83_RELEASE_METRICS
+        for suffix in ("game", "game_delta")
+    ),
+    "v9_release_game_support",
+)
+V9_GAME_STATE_FEATURES = (*V9_STRATEGY_FEATURES, *V9_PHYSICAL_FEATURES)
 
 LEGACY_NUMERIC_FEATURES = (
     "balls",
@@ -417,10 +450,120 @@ def _add_v83_context_features(rows: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([rows, pd.DataFrame(features, index=rows.index)], axis=1)
 
 
+def _past_rolling_sum(
+    values: pd.Series,
+    keys: pd.Series,
+    *,
+    window: int,
+) -> pd.Series:
+    previous = values.groupby(keys, sort=False).shift(1)
+    return (
+        previous.groupby(keys, sort=False)
+        .rolling(window, min_periods=1)
+        .sum()
+        .reset_index(level=0, drop=True)
+        .sort_index()
+    )
+
+
+def _add_v9_game_state_features(rows: pd.DataFrame) -> pd.DataFrame:
+    """Add current-game strategy and physical state from prior pitches only."""
+    game_key = rows.groupby(["game_pk", "pitcher"], sort=False).ngroup()
+    game_pitch_count = rows["game_pitch_count"]
+    target = rows["target_group"]
+    supported = target.notna().astype("float64")
+    recent_supported = _past_rolling_sum(supported, game_key, window=20).fillna(0)
+    features: dict[str, pd.Series] = {
+        "v9_inning_pitch_count": rows.groupby(
+            ["game_pk", "pitcher", "inning", "inning_topbot"],
+            sort=False,
+        ).cumcount()
+    }
+
+    recent_rates = {}
+    for group in PITCH_GROUPS:
+        is_group = target.eq(group)
+        support = is_group.groupby(game_key, sort=False).cumsum() - is_group
+        features[f"v9_game_support_{group}"] = support
+        recent_count = _past_rolling_sum(
+            is_group.astype("float64"),
+            game_key,
+            window=20,
+        ).fillna(0)
+        recent_rate = (
+            recent_count + 6 * rows[f"season_rate_{group}"]
+        ) / (recent_supported + 6)
+        recent_rates[group] = recent_rate
+        features[f"v9_game_recent20_rate_{group}"] = recent_rate
+
+        previous_game_pitch = (
+            game_pitch_count.where(is_group)
+            .groupby(game_key, sort=False)
+            .ffill()
+            .groupby(game_key, sort=False)
+            .shift(1)
+        )
+        features[f"v9_game_last_used_{group}"] = (
+            game_pitch_count - previous_game_pitch
+        )
+
+        for metric in V83_PITCH_METRICS:
+            values = pd.to_numeric(
+                _safe_column(rows, metric, np.nan),
+                errors="coerce",
+            )
+            observed = is_group & values.notna()
+            weighted = values.fillna(0).where(is_group, 0)
+            total = weighted.groupby(game_key, sort=False).cumsum() - weighted
+            count = observed.groupby(game_key, sort=False).cumsum() - observed
+            game = total / count.replace(0, np.nan)
+            season = rows[f"v83_{group}_{metric}_season"]
+            features[f"v9_{group}_{metric}_game"] = game
+            features[f"v9_{group}_{metric}_game_delta"] = game - season
+
+    season_mix = np.column_stack(
+        [rows[f"season_rate_{group}"].to_numpy() for group in PITCH_GROUPS]
+    )
+    recent_mix = np.column_stack(
+        [recent_rates[group].to_numpy() for group in PITCH_GROUPS]
+    )
+    midpoint = (season_mix + recent_mix) / 2
+    features["v9_game_mix_js"] = pd.Series(
+        0.5
+        * (
+            np.sum(season_mix * np.log(season_mix / midpoint), axis=1)
+            + np.sum(recent_mix * np.log(recent_mix / midpoint), axis=1)
+        ),
+        index=rows.index,
+    )
+
+    release_observed = pd.Series(False, index=rows.index)
+    for metric in V83_RELEASE_METRICS:
+        values = pd.to_numeric(
+            _safe_column(rows, metric, np.nan),
+            errors="coerce",
+        )
+        observed = values.notna()
+        release_observed |= observed
+        weighted = values.fillna(0)
+        total = weighted.groupby(game_key, sort=False).cumsum() - weighted
+        count = observed.groupby(game_key, sort=False).cumsum() - observed
+        game = total / count.replace(0, np.nan)
+        season = rows[f"v83_{metric}_season"]
+        features[f"v9_{metric}_game"] = game
+        features[f"v9_{metric}_game_delta"] = game - season
+    features["v9_release_game_support"] = (
+        release_observed.groupby(game_key, sort=False).cumsum()
+        - release_observed
+    )
+    return pd.concat([rows, pd.DataFrame(features, index=rows.index)], axis=1)
+
+
 def prepare_pitch_rows(
     frames: Iterable[pd.DataFrame],
     *,
     include_v83: bool = False,
+    include_v9: bool = False,
 ) -> pd.DataFrame:
     """Return target pitches with only pre-pitch and lagged information."""
     materialized = [frame for frame in frames if not frame.empty]
@@ -499,8 +642,10 @@ def prepare_pitch_rows(
     )
 
     _add_repertoire_features(rows)
-    if include_v83:
+    if include_v83 or include_v9:
         rows = _add_v83_context_features(rows)
+    if include_v9:
+        rows = _add_v9_game_state_features(rows)
 
     for base in (1, 2, 3):
         values = _safe_column(rows, f"on_{base}b", np.nan)
@@ -522,9 +667,11 @@ def prepare_pitch_rows(
     rows["pitcher_id"] = pd.to_numeric(rows["pitcher"], errors="raise").astype("int64")
     rows["batter_id"] = pd.to_numeric(rows["batter"], errors="raise").astype("int64")
 
-    numeric_features = (
-        (*NUMERIC_FEATURES, *V83_CONTEXT_FEATURES) if include_v83 else NUMERIC_FEATURES
-    )
+    numeric_features = NUMERIC_FEATURES
+    if include_v83 or include_v9:
+        numeric_features = (*numeric_features, *V83_CONTEXT_FEATURES)
+    if include_v9:
+        numeric_features = (*numeric_features, *V9_GAME_STATE_FEATURES)
     for name in numeric_features:
         rows[name] = pd.to_numeric(
             _safe_column(rows, name, np.nan), errors="coerce"

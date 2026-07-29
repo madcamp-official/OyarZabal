@@ -491,3 +491,26 @@ Git revision:
   통계적으로 일관되지만 절대폭이 작으므로 V7.2 active와 replay 라우팅은
   변경하지 않는다. prospective 시작일은 2026-07-30이며 30일·전체
   100,000구·Personalizer 개입 15,000구를 모두 채운 뒤 한 번만 본다.
+
+## 2026-07-29 — V9-A Game-State Expert
+
+- V8.4 시간순 OOF를 고정 base로 두고 현재 경기의 최근 20구 mix, 구종별
+  support·마지막 사용 거리, 이닝·피로 상태와 이전 투구로만 계산한 당일
+  구위·릴리스 drift를 ID-free XGBoost residual로 평가했다.
+- 2023 OOF로 `strategy / physical / combined` Expert를 학습하고 2024에서
+  scale `0.1 / 0.25 / 0.5`를 비교했다. 정상·physical-drop 안전 조건을
+  함께 통과한 최저 Log Loss 후보는 `strategy × 0.1`이었다.
+- 2024에서 V8.4 대비 Exact 49.28%→49.48%, Family 59.04%→59.27%,
+  Macro F1 46.10%→46.05%, Log Loss 1.08705→1.08419, TVD
+  7.44%→6.88%였다. 0.25와 0.5는 더 높은 Accuracy와 낮은 Log Loss를
+  냈지만 Macro F1 안전 한도를 넘어 사전 규칙대로 제외했다.
+- 동결된 2025 750,581구에서는 Exact 48.99%→49.19%, Family
+  58.75%→59.00%, Hierarchical 53.87%→54.09%, Macro F1
+  46.59%→46.54%, Log Loss 1.10229→1.09888, TVD 8.52%→7.92%였다.
+  paired-game Log Loss gain 95% CI는 `[0.003324, 0.003488]`였다.
+- 당일 physical-only와 combined 후보는 strategy 단독보다 독립적인 이득을
+  만들지 못했다. 선택 모델의 상위 신호는 최근 20구 구종 mix와 구종별
+  마지막 사용 거리였다.
+- 안전 게이트는 통과했지만 사전에 정한 실용적 최소 효과(Log Loss 0.005
+  또는 Exact 0.4%p 개선)를 충족하지 못했다. V9-A는 `research-passed /
+  shadow-only`로 보존하고 2026 진단·제품 연결·사후 재튜닝은 수행하지 않는다.
