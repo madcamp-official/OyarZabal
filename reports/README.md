@@ -9,7 +9,8 @@
 > **현재 결론:** V7.2는 현재 taxonomy·계층 decoder·Registry·UI 계약의
 > 기본 모델로 `active`다. 이는 V5 대비 통계적 승격이 아니라 제품 세대교체다.
 > V5의 30명·28,734구 고정 cohort에서는 Log Loss가 0.0086 나빴으므로
-> prospective 사후 성능 인증은 계속한다.
+> prospective 사후 성능 인증은 계속한다. 연구 기준선은 V8.4이며, V8.5는
+> `research-passed / prospective-pending` 후보로 동결돼 있다.
 
 V7의 실제 Registry와 계층형 지표 결과는
 [V7 리포트](2026-07-27-v7-hierarchical-incremental.md)에 정리했다.
@@ -24,6 +25,18 @@ full·limited 배율만 3배·4배로 높인 공개 2026 진단 결과다.
 full 배율도 4로 맞춘 추가 stress test다.
 [V7.5 극단적 Residual 실험](2026-07-28-v7.5-extreme-residual-test.md)은
 scale과 확률 안전 cap을 크게 열어 tier별 한계를 확인한다.
+[V8 Sequence Expert](2026-07-28-v8-sequence.md)는 최근 16구 Transformer의
+증분 신호와 Macro F1 실패를 기록한다.
+[V8.1 Balanced Sequence](2026-07-28-v8.1-balanced-sequence.md)는
+point-in-time 레퍼토리로 Macro F1을 안전 범위까지 회복한 결과다.
+[V8.3 Robust Sequence](2026-07-28-v8.3-robust-sequence.md)는 물리·포수
+문맥을 추가했지만 분포 안전 게이트에서 기각된 실험이다.
+[V8.4 Distribution-Safe Sequence](2026-07-28-v8.4-distribution-safe-sequence.md)는
+분포 안전 objective와 3-seed ensemble로 2024·2025를 통과한 연구 기준선이다.
+[V8.4 2026 Temporal 평가](2026-07-29-v8.4-2026-holdout.md)는 2025까지
+재학습한 고정 후보의 historical regression 결과다.
+[V8.5 Sequence-adjusted Personalizer](2026-07-29-v8.5-sequence-personalizer.md)는
+V8.4 위에서 개인화를 다시 학습한 prospective-pending 후보를 기록한다.
 
 ## 모델 진화 흐름
 
@@ -40,7 +53,12 @@ flowchart TD
     V73["V7.3 · tier scale stress test<br/>full ×3 · limited ×4"]
     V74["V7.4 · equal tier scale<br/>full ×4 · limited ×4"]
     V75["V7.5 · extreme residual<br/>full/limited ×6.372873 · cap 4"]
-    V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7 --> V72 --> V73 --> V74 --> V75
+    V8["V8 · Transformer Sequence Expert<br/>증분 신호 · Macro F1 실패"]
+    V81["V8.1 · repertoire-balanced sequence<br/>안전 범위 회복"]
+    V83["V8.3 · physical/catcher context<br/>분포 붕괴 · 기각"]
+    V84["V8.4 · distribution-safe sequence<br/>2024·2025 통과"]
+    V85["V8.5 · sequence-adjusted personalizer<br/>research-passed · prospective-pending"]
+    V1 --> V2 --> V3 --> V4 --> V5 --> V6 --> V7 --> V72 --> V73 --> V74 --> V75 --> V8 --> V81 --> V83 --> V84 --> V85
 ```
 
 ## 버전 요약
@@ -58,6 +76,15 @@ flowchart TD
 | [V7.3](2026-07-28-v7.3-tier-scale-test.md) | full ×3 + limited ×4 | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.88% | 39.23% → **39.49%** | **1.2422** → 1.2460 | 공개 표본 stress test |
 | [V7.4](2026-07-28-v7.4-equal-tier-scale-test.md) | full ×4 + limited ×4 | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.88% | 39.23% → **39.49%** | **1.2422** → 1.2460 | full 증분 stress test |
 | [V7.5](2026-07-28-v7.5-extreme-residual-test.md) | 극단적 scale + cap 해제 | 2026 **V5 고정 30명** 28,734구 | **45.14%** → 44.42% | **39.23%** → 35.16% | **1.2422** → 1.2536 | limited 과보정 · 기각 |
+| [V8](2026-07-28-v8-sequence.md) | 최근 16구 Transformer Expert | 2025 OOF 750,581구 | 48.60% → 49.45% | **46.60%** → 45.85% | 1.1103 → **1.0981** | Macro F1 게이트 실패 · blend 0 |
+| [V8.1](2026-07-28-v8.1-balanced-sequence.md) | point-in-time 레퍼토리 + 균형 실험 | 2025 OOF 750,581구 | 48.60% → **49.57%** | **46.60%** → 46.48% | 1.1103 → **1.0962** | accepted trade-off · 연구 후보 |
+| [V8.3](2026-07-28-v8.3-robust-sequence.md) | Global-conditioned physical/catcher residual | 2024 OOF 740,320구 | 48.94% | **46.27%** → 42.61% | 1.0937 → **1.0723** | Macro F1·TVD 실패 · 기각 |
+| [V8.4](2026-07-28-v8.4-distribution-safe-sequence.md) | 분포 안전 objective + 3-seed ensemble | 2025 OOF 750,581구 | 48.60% → **48.99%** | 46.60% → **46.59%** | 1.1103 → **1.1023** | 연구 게이트 통과 |
+| [V8.4 2026](2026-07-29-v8.4-2026-holdout.md) | 2025까지 전체 재학습 | 2026 historical 467,300구 | 47.46% → **47.91%** | 45.60% → **45.69%** | 1.1467 → **1.1377** | temporal regression 통과 |
+| [V8.5](2026-07-29-v8.5-sequence-personalizer.md) | V8.4 위 pooled Personalizer 재학습 | 2025 OOF 750,581구 | 48.99% → **49.00%** | **46.59%** → 46.59% | 1.1023 → **1.1021** | research-passed · prospective-pending |
+
+V8.2는 독립적으로 동결된 모델·리포트가 없어 표에 넣지 않았다. 번호는 실험
+브랜치의 중간 반복을 보존한 것이며, 결과가 남은 다음 정식 실험은 V8.3이다.
 
 V1과 V2는 포심·싱커·커터·슬라이더·커브·체인지업 taxonomy다. V3 이후는
 포심·무빙 패스트볼·슬라이더 계열·커브 계열·체인지업·스플리터/포크
@@ -121,6 +148,9 @@ residual 적용 범위가 작은 효과를 그대로 반영한다.
 | V5 Global ↔ Final | 가능 | 같은 2026 동결 holdout에 적용 |
 | V5 ↔ V6/V7 공개 2026 | 성능 회귀 진단만 | 동일 decoder·고정 cohort지만 이미 결과를 열어 독립 승격 근거가 아님 |
 | V5 ↔ V6/V7 2026-07-26 이후 | 가능 | 사전 고정한 prospective 조건 충족 후 첫 평가만 사용 |
+| V8 ↔ V8.1 ↔ V8.4 2025 | 가능 | 같은 2025 OOF 750,581구와 같은 Global 기준선 |
+| V8.4 ↔ V8.5 2025 | 가능 | 같은 행의 V8.4 OOF를 V8.5 base로 사용 |
+| V8.4/V8.5 2026 | 회귀 진단만 | 이미 관찰된 historical 구간으로 선택·승격 근거가 아님 |
 
 ## 통일된 평가 표본
 
