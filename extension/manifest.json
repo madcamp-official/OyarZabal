@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "OyarZabal Live",
+  "description": "MLB Gameday 옆에서 사용자와 모델이 다음 구종을 예측합니다.",
+  "version": "0.5.12",
+  "minimum_chrome_version": "114",
+  "permissions": [
+    "activeTab",
+    "sidePanel",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.mlb.com/*",
+    "https://api.pitchtest.madcamp-kaist.org/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "OyarZabal Live 열기"
+  }
+}

@@ -1,0 +1,24 @@
+[Unit]
+Description=Generate the daily Pitch Test from recent MLB games
+After=network-online.target oyarzabal-benchmark.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+TimeoutStartSec=5min
+User=root
+WorkingDirectory=/root/workspace/Oyarzabal
+Environment=BENCHMARK_ADMIN_TOKEN_FILE=/etc/oyarzabal-benchmark-token
+Environment=BENCHMARK_DB_PATH=/var/lib/oyarzabal/benchmark.sqlite3
+Environment=BENCHMARK_ALLOWED_ORIGIN=https://www.pitchtest.madcamp-kaist.org
+Environment=BENCHMARK_TRUST_PROXY=1
+Environment=BENCHMARK_RATE_LIMIT=30
+Environment=BENCHMARK_DAILY_RATE_LIMIT=120
+Environment=DAILY_CHALLENGE_OFFSET_DAYS=1
+ExecStart=/root/workspace/Oyarzabal/.venv/bin/oyarzabal-generate-daily
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/oyarzabal

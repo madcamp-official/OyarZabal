@@ -1,0 +1,10 @@
+[Unit]
+Description=Prepare the next Pitch Test before 00:00 KST
+
+[Timer]
+OnCalendar=*-*-* 14:50:00 UTC
+Persistent=true
+Unit=oyarzabal-daily.service
+
+[Install]
+WantedBy=timers.target

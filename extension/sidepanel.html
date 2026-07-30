@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OyarZabal Live</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <main>
+      <header class="brand">
+        <div>
+          <strong>OYAR<span>ZABAL</span></strong>
+          <small>GAMEDAY COMPANION</small>
+        </div>
+        <i id="connection" aria-label="연결 상태"></i>
+      </header>
+
+      <section class="score panel">
+        <div class="score-player">
+          <span>YOU</span>
+          <strong><b id="user-score">0</b><small>점</small></strong>
+          <div class="score-accuracies">
+            <em><small>상세</small><b id="user-exact">0.0%</b></em>
+            <em><small>계열</small><b id="user-family">0.0%</b></em>
+          </div>
+        </div>
+        <b>VS</b>
+        <div class="score-player">
+          <span>MODEL</span>
+          <strong><b id="model-score">0</b><small>점</small></strong>
+          <div class="score-accuracies">
+            <em><small>상세</small><b id="model-exact">0.0%</b></em>
+            <em><small>계열</small><b id="model-family">0.0%</b></em>
+          </div>
+        </div>
+      </section>
+
+      <section id="replay" class="replay panel" hidden>
+        <div>
+          <span>TEST MODE</span>
+          <strong id="replay-status">완료 경기 리플레이</strong>
+        </div>
+        <div class="replay-actions">
+          <button id="replay-start" type="button">테스트 시작</button>
+          <button id="replay-advance" type="button" hidden>
+            실제 투구 공개
+          </button>
+          <button id="replay-reset" type="button" hidden>처음부터</button>
+        </div>
+      </section>
+
+      <section id="sync" class="sync panel" hidden>
+        <div class="sync-state">
+          <span>MLB FEED</span>
+          <strong id="sync-inning">-</strong>
+          <b id="sync-count">0B 0S</b>
+        </div>
+        <div class="sync-target">
+          <span>타자</span>
+          <strong id="sync-batter">-</strong>
+          <b id="sync-pitch">-구째</b>
+        </div>
+      </section>
+
+      <section id="game" class="game panel" hidden>
+        <div class="teams">
+          <span id="away-team">AWAY</span>
+          <strong><b id="away-score">0</b> : <b id="home-score">0</b></strong>
+          <span id="home-team">HOME</span>
+        </div>
+        <div class="situation">
+          <strong id="inning">-</strong>
+          <span id="count">0B 0S 0O</span>
+          <span id="bases">주자 없음</span>
+        </div>
+        <div class="matchup">
+          <div><span>P</span><strong id="pitcher">-</strong></div>
+          <div><span>B</span><strong id="batter">-</strong></div>
+        </div>
+      </section>
+
+      <button
+        id="context-open"
+        class="context-open panel"
+        type="button"
+        aria-controls="context-modal"
+        aria-expanded="false"
+        hidden
+      >
+        <strong>통계 보기</strong>
+        <b aria-hidden="true">›</b>
+      </button>
+
+      <section id="result" class="result panel" hidden>
+        <span>직전 투구 결과</span>
+        <strong id="result-title"></strong>
+        <p id="result-detail"></p>
+      </section>
+
+      <section id="round" class="round panel" hidden>
+        <div class="round-head">
+          <div>
+            <span>NEXT PITCH</span>
+            <h1>다음 구종은?</h1>
+            <small id="selection-status" class="selection-status">
+              상세 구종을 선택해주세요
+            </small>
+          </div>
+          <strong id="timer">--</strong>
+        </div>
+        <div id="choices" class="choices"></div>
+      </section>
+
+      <section id="prediction" class="prediction panel" hidden>
+        <div class="prediction-head">
+          <span>MODEL PICK</span>
+          <strong id="model-pick"></strong>
+        </div>
+        <div id="probabilities"></div>
+      </section>
+
+      <section
+        id="context-modal"
+        class="context-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="context-title"
+        hidden
+      >
+        <header>
+          <div>
+            <h2 id="context-title">통계 보기</h2>
+          </div>
+          <button id="context-close" type="button" aria-label="예측 문맥 닫기">
+            ×
+          </button>
+        </header>
+
+        <section class="context-section">
+          <h3>투수 구사 패턴</h3>
+          <dl class="context-rates">
+            <div><dt>시즌</dt><dd id="context-season">-</dd></div>
+            <div><dt>최근 100구</dt><dd id="context-recent">-</dd></div>
+            <div><dt>오늘 경기</dt><dd id="context-game-rate">-</dd></div>
+          </dl>
+        </section>
+
+        <section class="context-section">
+          <h3>투수가 던지는 구종</h3>
+          <p id="context-repertoire" class="context-repertoire">-</p>
+        </section>
+
+        <section class="context-section">
+          <h3>투구 운용 상태</h3>
+          <div class="context-workload">
+            <article><span>오늘 투구 수</span><strong id="context-game-pitches">0구</strong></article>
+            <article><span>타자 상대</span><strong id="context-times-faced">1번째</strong></article>
+            <article><span>현재 타석</span><strong id="context-pa-pitches">0구</strong></article>
+          </div>
+        </section>
+
+        <p class="context-note">
+          모델 입력으로 사용되는 경기 문맥의 요약이며, 특정 예측의 직접적인
+          원인을 의미하지 않습니다.
+        </p>
+      </section>
+
+      <section id="empty" class="empty panel">
+        <span id="status-label">READY</span>
+        <h1 id="status-title">Gameday를 열어주세요</h1>
+        <p id="status-detail">
+          MLB Gameday 경기 탭에서 확장 프로그램 아이콘을 누르면 시작합니다.
+        </p>
+      </section>
+
+      <p id="error" class="error" role="alert"></p>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="scoring.js"></script>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

@@ -13,6 +13,10 @@
   --orange: #ff6b35;
 }
 
+:root.human-benchmark-page {
+  background: #fffdf7;
+}
+
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body { margin: 0; min-width: 320px; }

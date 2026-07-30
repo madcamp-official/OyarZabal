@@ -1,0 +1,22 @@
+[Unit]
+Description=OyarZabal human benchmark API
+After=network.target
+
+[Service]
+Type=simple
+User=oyarzabal
+Group=oyarzabal
+WorkingDirectory=/opt/oyarzabal
+EnvironmentFile=/opt/oyarzabal/.env
+ExecStart=/opt/oyarzabal/.venv/bin/gunicorn --worker-class gthread --workers 1 --threads 4 --bind 127.0.0.1:8000 "oyarzabal.benchmark_api:create_app()"
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/oyarzabal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,24 @@
+[Unit]
+Description=OyarZabal Gameday live prediction API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/workspace/Oyarzabal
+Environment=OYARZABAL_LIVE_DB_PATH=/var/lib/oyarzabal/live.sqlite3
+Environment=OYARZABAL_LIVE_MODEL_DIR=/root/workspace/Oyarzabal/models/v7.2
+Environment=OYARZABAL_HISTORY_DIRS=/root/workspace/Oyarzabal/data/raw/statcast-v8:/root/workspace/Oyarzabal/data/holdout/statcast-v8-2026
+ExecStart=/root/workspace/Oyarzabal/.venv/bin/gunicorn --worker-class gthread --workers 1 --threads 4 --timeout 120 --bind 127.0.0.1:8010 "oyarzabal.live_api:create_app()"
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/oyarzabal
+
+[Install]
+WantedBy=multi-user.target
