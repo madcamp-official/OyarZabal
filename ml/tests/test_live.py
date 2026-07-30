@@ -194,6 +194,10 @@ def test_live_view_builds_next_pitch_features() -> None:
 
 
 def test_live_predictor_uses_full_v72_residual_pipeline() -> None:
+    model_directory = Path("models/v7.2")
+    if not (model_directory / "registry.json").exists():
+        pytest.skip("requires local V7.2 model artifacts")
+
     view = build_live_view(live_feed(), 777777, history())
     rows = view.feature_row.copy()
     rows["pitcher"] = "571945"
@@ -202,7 +206,7 @@ def test_live_predictor_uses_full_v72_residual_pipeline() -> None:
     rows["stand_support"] = 1_000
     rows["transition_support"] = 1_000
 
-    prediction = LivePredictor(Path("models/v7.2")).predict(rows, None)
+    prediction = LivePredictor(model_directory).predict(rows, None)
 
     assert prediction["modelVersion"] == "V7.2"
     assert prediction["source"] == "reliability-gated-residual"
