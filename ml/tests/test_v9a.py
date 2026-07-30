@@ -1,7 +1,10 @@
+import json
 import pickle
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 from oyarzabal.features import (
     V9_GAME_STATE_FEATURES,
     V9_PHYSICAL_FEATURES,
@@ -9,6 +12,7 @@ from oyarzabal.features import (
 )
 from oyarzabal.residual import apply_correction
 from oyarzabal.v9a import (
+    _comparison_metrics,
     game_state_matrix,
     predict_game_state_correction,
     train_game_state_expert,
@@ -40,6 +44,30 @@ def test_v9a_feature_contract_has_no_raw_entity_ids() -> None:
 
     assert not forbidden.intersection(V9_GAME_STATE_FEATURES)
     assert set(V9_STRATEGY_FEATURES).isdisjoint(V9_PHYSICAL_FEATURES)
+
+
+def test_v85_comparison_requires_the_same_2026_fingerprint(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "v85.json"
+    artifact.write_text(
+        json.dumps(
+            {
+                "retrospectiveStatus": "complete",
+                "retrospective2026": {
+                    "rowFingerprint": "same",
+                    "stages": {"E_safe_alpha_caps": {"accuracy": 0.5}},
+                },
+            }
+        )
+    )
+
+    assert _comparison_metrics(
+        artifact,
+        expected_fingerprint="same",
+    ) == {"accuracy": 0.5}
+    with pytest.raises(ValueError, match="fingerprint"):
+        _comparison_metrics(artifact, expected_fingerprint="different")
 
 
 def test_physical_drop_keeps_strategy_and_masks_physical_values() -> None:

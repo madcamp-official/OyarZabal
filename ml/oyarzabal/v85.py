@@ -889,9 +889,25 @@ def _v84_retrospective_base(
     holdout_artifact_path: Path,
     *,
     batch_size: int,
+    include_v9: bool = False,
 ) -> dict[str, object]:
     expected = json.loads(holdout_artifact_path.read_text())
     holdout_raw = _load_raw(holdout_directory)
+    required_holdout_columns = {
+        "fielder_2",
+        "pfx_x",
+        "pfx_z",
+        "release_extension",
+        "release_pos_x",
+        "release_pos_z",
+        "release_spin_rate",
+    }
+    missing_holdout_columns = required_holdout_columns - set(holdout_raw)
+    if missing_holdout_columns:
+        raise ValueError(
+            "V8.4 retrospective requires extended Statcast columns: "
+            f"{sorted(missing_holdout_columns)}"
+        )
     holdout_raw["game_date"] = pd.to_datetime(
         holdout_raw["game_date"],
         errors="coerce",
@@ -902,7 +918,11 @@ def _v84_retrospective_base(
     ):
         raise ValueError("2026 retrospective date boundary failed")
     combined_raw = pd.concat([training_raw, holdout_raw], ignore_index=True)
-    combined_rows = prepare_pitch_rows([combined_raw], include_v83=True)
+    combined_rows = prepare_pitch_rows(
+        [combined_raw],
+        include_v83=True,
+        include_v9=include_v9,
+    )
     training_rows = combined_rows[
         combined_rows["game_date"].dt.year < 2026
     ]
