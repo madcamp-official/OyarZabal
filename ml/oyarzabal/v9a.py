@@ -537,6 +537,75 @@ def _report(result: dict[str, object]) -> str:
                 "",
             ]
         )
+    retrospective = result.get("retrospective2026")
+    if retrospective:
+        comparison = retrospective["comparison"]
+        lines.extend(
+            [
+                "## 2026 Retrospective",
+                "",
+                (
+                    f"- 학습 범위: `{retrospective['trainingRange']['start']}` ~ "
+                    f"`{retrospective['trainingRange']['end']}`"
+                ),
+                (
+                    f"- 평가 범위: `{retrospective['holdoutRange']['start']}` ~ "
+                    f"`{retrospective['holdoutRange']['end']}`"
+                ),
+                f"- 공통 표본: `{retrospective['holdoutRows']:,}`구",
+                f"- row fingerprint: `{retrospective['rowFingerprint']}`",
+                "- 2026 학습·선택 사용: `false`",
+                "",
+                (
+                    "| 모델 | Exact | Family | Hierarchical | Macro F1 | "
+                    "Log Loss | TVD |"
+                ),
+                "|---|---:|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for name in ("V8.4", "V8.5", "V9-A"):
+            metrics = comparison[name]
+            lines.append(
+                f"| {name} | {metrics['accuracy']:.2%} | "
+                f"{metrics['familyAccuracy']:.2%} | "
+                f"{metrics['hierarchicalAccuracy']:.2%} | "
+                f"{metrics['macroF1']:.2%} | {metrics['logLoss']:.5f} | "
+                f"{metrics['totalVariationDistance']:.2%} |"
+            )
+        bootstrap = retrospective["assessment"]["bootstrap"]
+        v85_metrics = comparison["V8.5"]
+        v9_metrics = comparison["V9-A"]
+        exact_delta = 100 * (v9_metrics["accuracy"] - v85_metrics["accuracy"])
+        family_delta = 100 * (
+            v9_metrics["familyAccuracy"] - v85_metrics["familyAccuracy"]
+        )
+        macro_delta = 100 * (
+            v9_metrics["macroF1"] - v85_metrics["macroF1"]
+        )
+        log_loss_delta = v9_metrics["logLoss"] - v85_metrics["logLoss"]
+        lines.extend(
+            [
+                "",
+                (
+                    "- V9-A − V8.5: Exact "
+                    f"`{exact_delta:+.2f}%p`, Family "
+                    f"`{family_delta:+.2f}%p`, Macro F1 "
+                    f"`{macro_delta:+.2f}%p`, Log Loss "
+                    f"`{log_loss_delta:+.6f}`"
+                ),
+                (
+                    "- V9-A의 V8.4 대비 paired-game Log Loss gain 95% CI: "
+                    f"`[{bootstrap['ciLower']:.6f}, "
+                    f"{bootstrap['ciUpper']:.6f}]`"
+                ),
+                "",
+                (
+                    "이 구간은 이미 관찰된 historical retrospective이며 "
+                    "학습·선택에 사용하지 않았다."
+                ),
+                "",
+            ]
+        )
     lines.extend(
         [
             "## 판단",
@@ -548,6 +617,22 @@ def _report(result: dict[str, object]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _comparison_metrics(
+    v85_artifact_path: Path,
+    *,
+    expected_fingerprint: str,
+) -> dict[str, object]:
+    payload = json.loads(v85_artifact_path.read_text(encoding="utf-8"))
+    retrospective = payload.get("retrospective2026")
+    if (
+        payload.get("retrospectiveStatus") != "complete"
+        or not retrospective
+        or retrospective.get("rowFingerprint") != expected_fingerprint
+    ):
+        raise ValueError("V8.5 retrospective fingerprint does not match V9-A")
+    return retrospective["stages"]["E_safe_alpha_caps"]
 
 
 def _save(
@@ -562,6 +647,108 @@ def _save(
     )
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(_report(result), encoding="utf-8")
+
+
+def run_retrospective(
+    data_directory: Path,
+    oof_directory: Path,
+    v84_artifact_path: Path,
+    holdout_directory: Path,
+    v84_refit_model_directory: Path,
+    v84_holdout_artifact_path: Path,
+    v85_artifact_path: Path,
+    artifact_directory: Path,
+    report_path: Path,
+    *,
+    batch_size: int = 8192,
+) -> dict[str, object]:
+    result_path = artifact_directory / "result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    if result.get("status") != "research-passed":
+        raise ValueError("2026 retrospective requires passed 2025 confirmation")
+    selected = result["selection2024"]["selected"]
+    if selected is None:
+        raise ValueError("V9-A has no frozen candidate")
+
+    folds, reproduction = _load_folds(
+        data_directory,
+        oof_directory,
+        v84_artifact_path,
+    )
+    training_rows = pd.concat(
+        [folds[year]["rows"] for year in OOF_YEARS],
+        ignore_index=True,
+    )
+    training_base = np.concatenate(
+        [folds[year]["base"] for year in OOF_YEARS],
+    )
+    fitted = _fit_final(
+        training_rows,
+        training_base,
+        FEATURE_SETS[str(selected["featureSet"])],
+        int(selected["treeCount"]),
+    )
+    del folds, training_rows, training_base
+    gc.collect()
+    assert_safe(snapshot(Path.cwd()))
+
+    training_raw = _load_raw(data_directory)
+    training_raw["game_date"] = pd.to_datetime(
+        training_raw["game_date"],
+        errors="coerce",
+    )
+    from .v85 import _v84_retrospective_base
+
+    retrospective_base = _v84_retrospective_base(
+        training_raw,
+        holdout_directory,
+        v84_refit_model_directory,
+        v84_holdout_artifact_path,
+        batch_size=batch_size,
+        include_v9=True,
+    )
+    del training_raw
+    gc.collect()
+
+    rows = retrospective_base["rows"]
+    base = retrospective_base["base"]
+    correction = predict_game_state_correction(fitted, rows)
+    final = apply_correction(base, correction, float(selected["scale"]))
+    assessment = _assessment(rows, base, final)
+    fingerprint = str(retrospective_base["metadata"]["rowFingerprint"])
+    v85_metrics = _comparison_metrics(
+        v85_artifact_path,
+        expected_fingerprint=fingerprint,
+    )
+
+    model_directory = Path("models/v9a-2026")
+    model_directory.mkdir(parents=True, exist_ok=True)
+    model_path = model_directory / "game-state-expert.pkl"
+    with model_path.open("wb") as handle:
+        pickle.dump(fitted, handle)
+    result["retrospective2026"] = {
+        **retrospective_base["metadata"],
+        "oofTrainingYears": list(OOF_YEARS),
+        "oofTrainingRows": int(
+            sum(item["rows"] for item in reproduction.values())
+        ),
+        "selectedFeatureSet": selected["featureSet"],
+        "scale": selected["scale"],
+        "treeCount": selected["treeCount"],
+        "modelHash": _hash_file(model_path),
+        "oofReproduction": reproduction,
+        "assessment": assessment,
+        "comparison": {
+            "V8.4": assessment["baseMetrics"],
+            "V8.5": v85_metrics,
+            "V9-A": assessment["metrics"],
+        },
+        "selectionImpact": "none-retrospective-only",
+    }
+    result["retrospectiveStatus"] = "complete"
+    result["resourceAfterRetrospective"] = asdict(snapshot(Path.cwd()))
+    _save(result, artifact_directory, report_path)
+    return result
 
 
 def run(
@@ -803,14 +990,44 @@ def main() -> None:
         type=Path,
         default=Path("reports/2026-07-29-v9a-game-state.md"),
     )
+    parser.add_argument("--holdout-data", type=Path)
+    parser.add_argument("--v84-refit-models", type=Path)
+    parser.add_argument("--v84-holdout-artifact", type=Path)
+    parser.add_argument("--v85-artifact", type=Path)
+    parser.add_argument("--retrospective-only", action="store_true")
+    parser.add_argument("--batch-size", type=int, default=8192)
     arguments = parser.parse_args()
-    result = run(
-        arguments.data_directory,
-        arguments.oof_directory,
-        arguments.v84_artifact,
-        arguments.artifact_directory,
-        arguments.report,
-    )
+    if arguments.retrospective_only:
+        if any(
+            value is None
+            for value in (
+                arguments.holdout_data,
+                arguments.v84_refit_models,
+                arguments.v84_holdout_artifact,
+                arguments.v85_artifact,
+            )
+        ):
+            parser.error("retrospective inputs are required")
+        result = run_retrospective(
+            arguments.data_directory,
+            arguments.oof_directory,
+            arguments.v84_artifact,
+            arguments.holdout_data,
+            arguments.v84_refit_models,
+            arguments.v84_holdout_artifact,
+            arguments.v85_artifact,
+            arguments.artifact_directory,
+            arguments.report,
+            batch_size=arguments.batch_size,
+        )
+    else:
+        result = run(
+            arguments.data_directory,
+            arguments.oof_directory,
+            arguments.v84_artifact,
+            arguments.artifact_directory,
+            arguments.report,
+        )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

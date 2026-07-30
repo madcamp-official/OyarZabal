@@ -39,7 +39,8 @@ point-in-time 레퍼토리로 Macro F1을 안전 범위까지 회복한 결과�
 [V8.5 Sequence-adjusted Personalizer](2026-07-29-v8.5-sequence-personalizer.md)는
 V8.4 위에서 개인화를 다시 학습한 prospective-pending 후보를 기록한다.
 [V9-A Game-State Expert](2026-07-29-v9a-game-state.md)는 현재 경기의 최근
-구종 mix·마지막 사용 거리와 당일 구위 drift를 분리 검증한 결과다.
+구종 mix·마지막 사용 거리와 당일 구위 drift를 분리 검증한 결과이며,
+2025까지 재학습한 동일 2026 표본의 V8.5 직접 비교도 포함한다.
 
 ## 모델 진화 흐름
 
@@ -87,6 +88,7 @@ flowchart TD
 | [V8.4 2026](2026-07-29-v8.4-2026-holdout.md) | 2025까지 전체 재학습 | 2026 historical 467,300구 | 47.46% → **47.91%** | 45.60% → **45.69%** | 1.1467 → **1.1377** | temporal regression 통과 |
 | [V8.5](2026-07-29-v8.5-sequence-personalizer.md) | V8.4 위 pooled Personalizer 재학습 | 2025 OOF 750,581구 | 48.99% → **49.00%** | **46.59%** → 46.59% | 1.1023 → **1.1021** | research-passed · prospective-pending |
 | [V9-A](2026-07-29-v9a-game-state.md) | 최근 20구 game mix + last-used Expert | 2025 OOF 750,581구 | 48.99% → **49.19%** | **46.59%** → 46.54% | 1.1023 → **1.0989** | 안전 통과 · 실용 기준 미달 · Shadow |
+| [V9-A 2026](2026-07-29-v9a-game-state.md) | 2025까지 재학습 · V8.5 공통 표본 비교 | 2026 historical 467,300구 | 47.91% → **48.07%** | **45.69%** → 45.62% | 1.1377 → **1.1341** | V8.5보다 Exact +0.16%p · 진단 전용 |
 
 V8.2는 독립적으로 동결된 모델·리포트가 없어 표에 넣지 않았다. 번호는 실험
 브랜치의 중간 반복을 보존한 것이며, 결과가 남은 다음 정식 실험은 V8.3이다.

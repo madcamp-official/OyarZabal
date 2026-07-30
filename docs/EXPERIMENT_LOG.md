@@ -514,3 +514,26 @@ Git revision:
 - 안전 게이트는 통과했지만 사전에 정한 실용적 최소 효과(Log Loss 0.005
   또는 Exact 0.4%p 개선)를 충족하지 못했다. V9-A는 `research-passed /
   shadow-only`로 보존하고 2026 진단·제품 연결·사후 재튜닝은 수행하지 않는다.
+
+## 2026-07-30 — V8.5·V9-A 2025 전체 학습 후 2026 공통 평가
+
+- V8.5와 V9-A를 같은 `2026-03-25~07-27` 467,300구, 1,596경기에서
+  비교했다. row fingerprint는
+  `6f33ebc4d10aa3a7d31b26cb0beb854b3f9dcac54360ee47e0a912f9893d245b`다.
+- V8.5는 기존과 같이 2023~2025 V8.4 OOF로 Personalizer를 학습한 동결
+  artifact를 재검증했다. V9-A는 2024에서 고정한 `strategy × 0.1`,
+  tree count 1,232를 바꾸지 않고 2023~2025 OOF 2,243,530구로 refit했다.
+- V8.5는 Exact 47.91%, Family 58.68%, Hierarchical 53.30%,
+  Macro F1 45.68%, Log Loss 1.13761이었다.
+- V9-A는 Exact 48.07%, Family 58.91%, Hierarchical 53.49%,
+  Macro F1 45.62%, Log Loss 1.13406이었다. V8.5 대비 Exact +0.16%p,
+  Family +0.24%p, Hierarchical +0.20%p, Macro F1 -0.06%p,
+  Log Loss -0.00354다.
+- V9-A의 V8.4 대비 paired-game Log Loss 개선 95% CI는
+  `[0.003565, 0.003775]`였고, TVD는 9.93%에서 9.35%로 개선됐다.
+- 첫 실행은 확장 물리 컬럼이 없는 기본 2026 캐시를 잘못 지정해 V8.4 재현
+  게이트에서 중단됐다. 이후 회전·무브먼트·릴리스·포수 컬럼을 요구하는 조기
+  schema 검사를 추가하고 `statcast-v8-2026` 캐시로 재실행해 통과했다.
+- 2026 데이터는 학습·선택에 사용하지 않았으며 이미 공개된 historical
+  retrospective이므로 모델 승격이나 사후 튜닝 근거로 사용하지 않는다.
+  V7.2 active와 replay 라우팅은 유지한다.
