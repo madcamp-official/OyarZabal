@@ -9,6 +9,7 @@ description = "Leakage-safe MLB next-pitch prediction and replay artifacts"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "flask>=3,<4",
   "numpy>=2.0,<3",
   "pandas>=2.2,<4",
   "pyarrow>=18,<26",
@@ -19,6 +20,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+benchmark = [
+  "gunicorn>=23,<24",
+]
 sequence = [
   "torch>=2.5,<3",
 ]
@@ -30,6 +34,8 @@ dev = [
 [project.scripts]
 oyarzabal-build-demo = "oyarzabal.pipeline:main"
 oyarzabal-fetch-statcast = "oyarzabal.data:main"
+oyarzabal-human-benchmark-api = "oyarzabal.benchmark_api:main"
+oyarzabal-generate-daily = "oyarzabal.daily_generate:main"
 oyarzabal-train-v8 = "oyarzabal.v8:main"
 oyarzabal-train-v83 = "oyarzabal.v83:main"
 oyarzabal-train-v84 = "oyarzabal.v84:main"
