@@ -1265,6 +1265,10 @@ def evaluate_frozen_holdout(
         "trainingCutoff": str(registry_payload["dataCutoff"]),
         "holdoutStart": rows["game_date"].min().date().isoformat(),
         "holdoutEnd": rows["game_date"].max().date().isoformat(),
+        "evaluationSample": {
+            "rows": int(len(rows)),
+            "sampleSha256": evaluation_sample_fingerprint(rows),
+        },
         "evaluationCohort": {
             "id": COMPARISON_COHORT_ID,
             "sourceModel": "V5",
