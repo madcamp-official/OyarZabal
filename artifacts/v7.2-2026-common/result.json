@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "modelVersion": "V7.2",
+  "evaluationType": "historical-retrospective",
+  "trainingCutoff": "2025-11-01",
+  "holdoutRange": {
+    "start": "2026-03-25",
+    "end": "2026-07-27"
+  },
+  "evaluationSample": {
+    "rows": 467300,
+    "games": 1596,
+    "sampleSha256": "57c394d00aa2c9baba3c69f75a93f6e76676d1100db2569011cfd6b42327a55e"
+  },
+  "2026UsedForTraining": false,
+  "2026UsedForSelection": false,
+  "models": {
+    "global": "47d4dad107b9db3d036d8fac8acfde0c14797657a25eaa6c3175cccead30f275",
+    "residual": "eacd38449952b93c80b3fe97e44747d3b091dc9d1281b7d74d3bbb76fff2a525",
+    "gate": "6a3b145bc3435252490c1e86a13df10327304c599b0433667b8b807c01309105",
+    "registry": "5bcf3bbe949628f5cb29c430e3e6c8d4f3c8e0869233b5408aaa8379522b29e6"
+  },
+  "global": {
+    "accuracy": 0.47911191953777016,
+    "familyAccuracy": 0.586824309865183,
+    "hierarchicalAccuracy": 0.5329681147014765,
+    "macroF1": 0.4577674213043923,
+    "logLoss": 1.1363569867892926,
+    "totalVariationDistance": 0.09985234324844855,
+    "maxClassCalibrationError": 0.04760083782190344,
+    "zeroRecallClasses": []
+  },
+  "final": {
+    "accuracy": 0.47955488979242455,
+    "familyAccuracy": 0.5873015193665739,
+    "hierarchicalAccuracy": 0.5334282045794992,
+    "macroF1": 0.45778327748210446,
+    "logLoss": 1.1357503156572817,
+    "totalVariationDistance": 0.09834153648619733,
+    "maxClassCalibrationError": 0.046829332029084125,
+    "zeroRecallClasses": []
+  },
+  "pairedBootstrap": {
+    "games": 1596,
+    "samples": 1000,
+    "meanGain": 0.0006066711320106532,
+    "improvementProbability": 0.9995004995004995,
+    "ciLower": 0.0005132620678153817,
+    "ciUpper": 0.0007070255400561466
+  },
+  "routing": {
+    "global": 423955,
+    "reliabilityGatedResidual": 43345,
+    "nonZeroScale": {
+      "mean": 0.1571288367989239,
+      "median": 0.09916650737103856,
+      "p90": 0.3874146605933505
+    }
+  },
+  "comparison": {
+    "v8.5": {
+      "accuracy": 0.47914829873742776,
+      "familyAccuracy": 0.5867558313717098,
+      "hierarchicalAccuracy": 0.5329520650545688,
+      "macroF1": 0.4568159880530008,
+      "logLoss": 1.1376084783469866,
+      "totalVariationDistance": 0.09911619944361222
+    },
+    "v9a": {
+      "accuracy": 0.48074470361652044,
+      "familyAccuracy": 0.5891333190669805,
+      "hierarchicalAccuracy": 0.5349390113417505,
+      "macroF1": 0.4562065201969671,
+      "logLoss": 1.1340641922812846,
+      "totalVariationDistance": 0.09353520222555105
+    }
+  },
+  "selectionImpact": "none-retrospective-only"
+}

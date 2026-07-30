@@ -4629,6 +4629,7 @@
     },
     "holdoutRows": 467300,
     "rowFingerprint": "6f33ebc4d10aa3a7d31b26cb0beb854b3f9dcac54360ee47e0a912f9893d245b",
+    "sampleSha256": "57c394d00aa2c9baba3c69f75a93f6e76676d1100db2569011cfd6b42327a55e",
     "globalTrees": 1996,
     "v84ArtifactHash": "1a4f386ccc61c78fc52d5e5f40ab4048634359aefba62569672a985c3311c944",
     "v84ModelHashes": {

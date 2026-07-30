@@ -712,6 +712,8 @@ def run_retrospective(
 
     rows = retrospective_base["rows"]
     base = retrospective_base["base"]
+    from .holdout import evaluation_sample_fingerprint
+
     correction = predict_game_state_correction(fitted, rows)
     final = apply_correction(base, correction, float(selected["scale"]))
     assessment = _assessment(rows, base, final)
@@ -728,6 +730,7 @@ def run_retrospective(
         pickle.dump(fitted, handle)
     result["retrospective2026"] = {
         **retrospective_base["metadata"],
+        "sampleSha256": evaluation_sample_fingerprint(rows),
         "oofTrainingYears": list(OOF_YEARS),
         "oofTrainingRows": int(
             sum(item["rows"] for item in reproduction.values())

@@ -20,6 +20,8 @@ V7의 실제 Registry와 계층형 지표 결과는
 정리했다.
 [V7.2 Residual 튜닝 리포트](2026-07-28-v7.2-residual-tuning.md)는
 누수 없는 OOF 탐색, 선수별 안전성, 공개 2026 회귀 진단을 함께 기록한다.
+[V7.2·V8.5·V9-A 공통 평가](2026-07-30-v7.2-v8.5-v9a-common.md)는
+2025까지 학습한 세 모델을 동일한 2026 467,300구에서 직접 비교한다.
 [V7.3 tier scale 실험](2026-07-28-v7.3-tier-scale-test.md)은 같은 모델에서
 full·limited 배율만 3배·4배로 높인 공개 2026 진단 결과다.
 [V7.4 동일 tier scale 실험](2026-07-28-v7.4-equal-tier-scale-test.md)은
@@ -86,6 +88,7 @@ flowchart TD
 | [V8.3](2026-07-28-v8.3-robust-sequence.md) | Global-conditioned physical/catcher residual | 2024 OOF 740,320구 | 48.94% | **46.27%** → 42.61% | 1.0937 → **1.0723** | Macro F1·TVD 실패 · 기각 |
 | [V8.4](2026-07-28-v8.4-distribution-safe-sequence.md) | 분포 안전 objective + 3-seed ensemble | 2025 OOF 750,581구 | 48.60% → **48.99%** | 46.60% → **46.59%** | 1.1103 → **1.1023** | 연구 게이트 통과 |
 | [V8.4 2026](2026-07-29-v8.4-2026-holdout.md) | 2025까지 전체 재학습 | 2026 historical 467,300구 | 47.46% → **47.91%** | 45.60% → **45.69%** | 1.1467 → **1.1377** | temporal regression 통과 |
+| [V7.2 2026 공통](2026-07-30-v7.2-v8.5-v9a-common.md) | 동결 active 모델 공통 표본 평가 | 2026 historical 467,300구 | 47.91% → **47.96%** | **45.78%** | 1.1364 → **1.1358** | V8.5보다 근소 우위 |
 | [V8.5](2026-07-29-v8.5-sequence-personalizer.md) | V8.4 위 pooled Personalizer 재학습 | 2025 OOF 750,581구 | 48.99% → **49.00%** | **46.59%** → 46.59% | 1.1023 → **1.1021** | research-passed · prospective-pending |
 | [V9-A](2026-07-29-v9a-game-state.md) | 최근 20구 game mix + last-used Expert | 2025 OOF 750,581구 | 48.99% → **49.19%** | **46.59%** → 46.54% | 1.1023 → **1.0989** | 안전 통과 · 실용 기준 미달 · Shadow |
 | [V9-A 2026](2026-07-29-v9a-game-state.md) | 2025까지 재학습 · V8.5 공통 표본 비교 | 2026 historical 467,300구 | 47.91% → **48.07%** | **45.69%** → 45.62% | 1.1377 → **1.1341** | V8.5보다 Exact +0.16%p · 진단 전용 |

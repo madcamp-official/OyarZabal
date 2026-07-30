@@ -537,3 +537,22 @@ Git revision:
 - 2026 데이터는 학습·선택에 사용하지 않았으며 이미 공개된 historical
   retrospective이므로 모델 승격이나 사후 튜닝 근거로 사용하지 않는다.
   V7.2 active와 replay 라우팅은 유지한다.
+
+## 2026-07-30 — V7.2 동일 2026 표본 평가
+
+- cutoff `2025-11-01`의 동결 V7.2를 V8.5·V9-A와 같은
+  `2026-03-25~07-27` 467,300구에서 평가했다. canonical sample SHA-256은
+  `57c394d00aa2c9baba3c69f75a93f6e76676d1100db2569011cfd6b42327a55e`로
+  세 모델 artifact에서 일치한다.
+- V7.2 Final은 Exact 47.96%, Family 58.73%, Hierarchical 53.34%,
+  Macro F1 45.78%, Log Loss 1.13575, TVD 9.83%였다.
+- V7.2 내부 Global 대비 Exact +0.04%p, Family +0.05%p,
+  Hierarchical +0.05%p, Log Loss -0.00061이었다. paired-game Log Loss
+  gain 95% CI는 `[0.000513, 0.000707]`였다.
+- Residual은 43,345구(9.28%)에 개입했고 non-zero scale 평균/중앙/p90은
+  `0.157 / 0.099 / 0.387`이었다.
+- V7.2는 V8.5보다 Exact +0.04%p, Macro F1 +0.10%p,
+  Log Loss -0.00186으로 근소하게 좋았다. V9-A는 V7.2보다 Exact +0.12%p,
+  Family +0.18%p, Log Loss -0.00169였지만 Macro F1은 -0.16%p였다.
+- 이 구간은 이미 공개된 historical retrospective이므로 V7.2 active와
+  replay 라우팅을 변경하지 않는다.
